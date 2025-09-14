@@ -1,0 +1,42 @@
+services:
+  #  backend:
+  #    build:
+  #      context: ..
+  #      dockerfile: Dockerfile
+  #    ports:
+  #      - "8000:8000"
+  #    depends_on:
+  #      postgres:
+  #        condition: service_healthy
+  #    environment:
+  #      - POSTGRES_USER=postgres
+  #      - POSTGRES_PASSWORD=postgres
+  #      - POSTGRES_HOST=postgres
+  #      - POSTGRES_PORT=5432
+  #      - POSTGRES_DB=circuit_simulator
+  #      - SECRET_KEY=your-secret-key-here
+  #      - ENVIRONMENT=development
+  #      - LOG_LEVEL=DEBUG
+  #      - DEBUG=True
+  #    restart: unless-stopped
+
+  pgvector:
+    image: pgvector/pgvector:pg17
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: carma_ai
+    # volumes:
+    #   - postgres_data:/var/lib/postgresql/data
+    #   - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+#volumes:
+#  postgres_data:
