@@ -16,7 +16,7 @@ class ComprehendRequest(BaseModel):
     )
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "texts": [
                     "Hello, my name is John Smith and I live in New York.",
@@ -36,7 +36,7 @@ class ComprehendResponse(BaseModel):
     processed_count: int = Field(..., description="Number of texts processed")
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "redacted_texts": [
                     "Hello, my name is [REDACTED] and I live in [REDACTED].",
