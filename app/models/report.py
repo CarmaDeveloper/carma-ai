@@ -38,26 +38,24 @@ class ReportGenerationRequest(BaseModel):
             return ""
         return v.strip()
 
-    @validator("scores")
-    def validate_scores_not_both(cls, v, values):
-        """Validate that both score and scores are not provided."""
-        if v is not None and values.get("legacy_score") is not None:
-            raise ValueError("Cannot provide both 'legacy_score' and 'scores' fields")
-        return v
+    # Accept both legacy_score and scores; no mutual exclusion validator
 
     def get_scores(self) -> Optional[Dict[str, float]]:
-        """Get scores as a dictionary, handling both single score and categorized formats."""
-        if self.scores is not None:
-            # Convert string values to float
-            return {k: float(v) for k, v in self.scores.items()}
-        elif self.legacy_score is not None:
+        """Get merged scores; categorized scores take precedence, legacy fills overall."""
+        merged: Dict[str, float] = {}
+        # Incorporate categorized scores first (highest precedence)
+        if self.scores:
+            merged.update({k: float(v) for k, v in self.scores.items()})
+        # Incorporate legacy score as overall if present and not already provided
+        if self.legacy_score is not None:
             if isinstance(self.legacy_score, dict):
-                # Convert string values to float
-                return {k: float(v) for k, v in self.legacy_score.items()}
+                for k, v in self.legacy_score.items():
+                    if k not in merged:
+                        merged[k] = float(v)
             else:
-                # Single overall score
-                return {"overall": float(self.legacy_score)}
-        return None
+                if "overall" not in merged:
+                    merged["overall"] = float(self.legacy_score)
+        return merged or None
 
     class Config:
         json_schema_extra = {
