@@ -74,7 +74,8 @@ async def ingest_document(request: IngestionRequest) -> IngestionResponse:
         if not response.success:
             logger.warning(f"S3 ingestion failed: {response.message}")
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail=response.message
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="S3 ingestion failed",
             )
 
         logger.info(
@@ -88,7 +89,10 @@ async def ingest_document(request: IngestionRequest) -> IngestionResponse:
         raise
     except VectorStoreError as e:
         logger.error(f"Vector store error during S3 ingestion: {str(e)}")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Vector store error during S3 ingestion",
+        )
     except Exception as e:
         logger.error(f"Unexpected error during S3 ingestion: {str(e)}")
         raise HTTPException(
@@ -190,11 +194,12 @@ async def remove_document(request: DocumentRemovalRequest) -> DocumentRemovalRes
             logger.warning(f"Document removal failed: {response.message}")
             if "not found" in response.message.lower():
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND, detail=response.message
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
                 )
             else:
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST, detail=response.message
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Document removal failed",
                 )
 
         logger.info(

@@ -1,5 +1,5 @@
 # Builder stage
-FROM python:3.13-bullseye as builder
+FROM python:3.13-slim AS builder
 
 # Set environment variables for Python
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -7,10 +7,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install system dependencies and apply security updates
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
+    curl \
+    ca-certificates \
+    && apt-get purge -y --auto-remove imagemagick libmagickcore-6.q16-6 libmagickwand-6.q16-6 libxslt1.1 || true \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
@@ -28,16 +33,21 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
 # Production stage
-FROM python:3.13-bullseye as production
+FROM python:3.13-slim AS production
 
 # Set environment variables
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# Install runtime dependencies only
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install runtime dependencies only and apply security updates
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
     libpq5 \
+    ca-certificates \
+    curl \
+    && apt-get purge -y --auto-remove imagemagick libmagickcore-6.q16-6 libmagickwand-6.q16-6 libxslt1.1 || true \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 

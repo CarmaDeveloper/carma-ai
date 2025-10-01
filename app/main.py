@@ -6,7 +6,8 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import reports, health, ingestion, comprehend
+from app.api import reports, health, ingestion, comprehend, chat
+from app.core.auth import AuthenticationMiddleware
 from app.core.config import settings
 from app.core.logging import setup_logger
 
@@ -42,6 +43,9 @@ def create_application() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Authentication middleware (must be added before other middlewares)
+    app.add_middleware(AuthenticationMiddleware)
+
     # CORS middleware
     app.add_middleware(
         CORSMiddleware,
@@ -56,6 +60,7 @@ def create_application() -> FastAPI:
     app.include_router(health.router)
     app.include_router(ingestion.router)
     app.include_router(comprehend.router)
+    app.include_router(chat.router)
 
     return app
 

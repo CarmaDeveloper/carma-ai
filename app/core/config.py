@@ -59,6 +59,9 @@ class Settings(BaseSettings):
         default=["LOCATION", "PERSON"], env="COMPREHEND_TYPES"
     )
 
+    # Authentication settings
+    AUTH_TOKEN: str = Field(default="", env="AUTH_TOKEN")
+
     # CORS settings
     CORS_ORIGINS: list = ["*"]  # For production, replace with specific origins
 
