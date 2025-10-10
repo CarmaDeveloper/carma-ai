@@ -1,6 +1,6 @@
 """Report generation service."""
 
-from typing import Dict, List, Set, Optional
+from typing import Dict, List, Set, Optional, Tuple
 
 from langchain_core.documents import Document
 
@@ -15,6 +15,7 @@ from app.models.report import (
 from app.prompts.report import (
     RAG_PROMPT_TEMPLATE,
     NO_CONTEXT_PROMPT_TEMPLATE,
+    NO_QAS_PROVIDED_TEXT,
     effective_prompt as compute_effective_prompt,
 )
 from app.services.comprehend import comprehend_service
@@ -53,7 +54,8 @@ class ReportGenerationService:
 
         try:
             # Step 1: Process answers through Comprehend for PII redaction
-            answers = [qa.answer for qa in request.qas]
+            # Extract all answers from hierarchical structure
+            answers = self._extract_all_answers(request.qas)
             redacted_answers = await comprehend_service.redact_pii(answers)
 
             logger.info(
@@ -116,8 +118,13 @@ class ReportGenerationService:
     ) -> List[Document]:
         """Retrieve context documents from vector store."""
         try:
-            # Extract questions for similarity search
-            questions = [qa.question for qa in qas]
+            # Extract all questions from hierarchical structure for similarity search
+            questions = self._extract_all_questions(qas)
+
+            # If no questions, return empty context
+            if not questions:
+                logger.info("No questions provided, skipping context retrieval")
+                return []
 
             # Perform similarity search
             return await vector_store_service.similarity_search(
@@ -181,14 +188,52 @@ class ReportGenerationService:
             raise ModelError(f"Failed to generate report: {str(e)}")
 
     def _format_qas(self, qas: List[QAItem], redacted_answers: List[str]) -> str:
-        """Format question-answer pairs for the prompt."""
-        formatted_qas = []
+        """Format question-answer pairs for the prompt, preserving hierarchical structure."""
+        if not qas:
+            return NO_QAS_PROVIDED_TEXT
 
-        for i, qa in enumerate(qas):
+        # Build a flat list of all QA items in order with their depth
+        qa_items = self._flatten_qas(qas)
+
+        # Format each QA item with proper indentation
+        formatted_qas = []
+        for i, (qa, depth) in enumerate(qa_items):
             answer = redacted_answers[i] if i < len(redacted_answers) else qa.answer
-            formatted_qas.append(f"Question: {qa.question}\nAnswer: {answer}")
+            indent = "  " * depth  # 2 spaces per depth level
+            formatted_qas.append(
+                f"{indent}Question: {qa.question}\n{indent}Answer: {answer}"
+            )
 
         return "\n\n".join(formatted_qas)
+
+    def _flatten_qas(
+        self, qas: List[QAItem], depth: int = 0
+    ) -> List[Tuple[QAItem, int]]:
+        """Recursively flatten hierarchical QA structure while preserving order and depth."""
+        items = []
+        for qa in qas:
+            items.append((qa, depth))
+            if qa.sub_questions:
+                items.extend(self._flatten_qas(qa.sub_questions, depth + 1))
+        return items
+
+    def _extract_all_answers(self, qas: List[QAItem]) -> List[str]:
+        """Recursively extract all answers from hierarchical QA structure."""
+        answers = []
+        for qa in qas:
+            answers.append(qa.answer)
+            if qa.sub_questions:
+                answers.extend(self._extract_all_answers(qa.sub_questions))
+        return answers
+
+    def _extract_all_questions(self, qas: List[QAItem]) -> List[str]:
+        """Recursively extract all questions from hierarchical QA structure."""
+        questions = []
+        for qa in qas:
+            questions.append(qa.question)
+            if qa.sub_questions:
+                questions.extend(self._extract_all_questions(qa.sub_questions))
+        return questions
 
     def _format_scores(self, scores: Optional[Dict[str, float]]) -> str:
         """Format scores for inclusion in the prompt."""

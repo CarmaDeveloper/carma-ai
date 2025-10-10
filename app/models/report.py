@@ -6,10 +6,17 @@ from pydantic import BaseModel, Field, validator
 
 
 class QAItem(BaseModel):
-    """Question and answer pair."""
+    """Question and answer pair with optional hierarchical sub-questions."""
 
     question: str = Field(..., description="The question")
     answer: str = Field(..., description="The answer")
+    sub_questions: Optional[List["QAItem"]] = Field(
+        None, description="Optional list of sub-questions related to this question"
+    )
+
+
+# Update forward references for recursive model
+QAItem.model_rebuild()
 
 
 class ReportGenerationRequest(BaseModel):
@@ -20,7 +27,7 @@ class ReportGenerationRequest(BaseModel):
     )
     prompt: str = Field(..., description="Prompt for report generation")
     qas: List[QAItem] = Field(
-        ..., description="List of question-answer pairs", min_items=1
+        default_factory=list, description="Optional list of question-answer pairs"
     )
     legacy_score: Optional[Union[float, Dict[str, Union[str, float]]]] = Field(
         None,
@@ -64,9 +71,29 @@ class ReportGenerationRequest(BaseModel):
                 "prompt": "Analyze the healthcare Q&A data to identify key treatment recommendations and patterns. Focus on evidence-based interventions and create a summary report with actionable insights for healthcare professionals.",
                 "qas": [
                     {
-                        "question": "What is the main topic?",
-                        "answer": "The main topic is artificial intelligence.",
-                    }
+                        "question": "How is your overall health?",
+                        "answer": "Good",
+                        "sub_questions": [
+                            {
+                                "question": "Do you have any chronic conditions?",
+                                "answer": "Yes, diabetes",
+                                "sub_questions": [
+                                    {
+                                        "question": "How long have you had diabetes?",
+                                        "answer": "5 years",
+                                    }
+                                ],
+                            },
+                            {
+                                "question": "Are you taking any medications?",
+                                "answer": "Yes, metformin",
+                            },
+                        ],
+                    },
+                    {
+                        "question": "What is your primary concern today?",
+                        "answer": "Blood sugar management",
+                    },
                 ],
                 "legacy_score": 85.5,  # Single legacy score format
                 # OR alternatively:

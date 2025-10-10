@@ -6,7 +6,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import reports, health, ingestion, comprehend, chat
+from app.api import reports, health, ingestion, comprehend, chat, chatbot
 from app.core.auth import AuthenticationMiddleware
 from app.core.config import settings
 from app.core.logging import setup_logger
@@ -19,10 +19,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger = setup_logger(__name__)
     logger.info(f"Starting CARMA AI Application, version={app.version}")
 
+    # Import and start chatbot service background tasks
+    from app.services.chatbot import chatbot_service
+
+    await chatbot_service.startup()
+
     yield
 
     # Shutdown
     logger.info("Shutting down CARMA AI Application")
+
+    # Stop chatbot service background tasks
+    await chatbot_service.shutdown()
 
 
 def create_application() -> FastAPI:
@@ -61,6 +69,7 @@ def create_application() -> FastAPI:
     app.include_router(ingestion.router)
     app.include_router(comprehend.router)
     app.include_router(chat.router)
+    app.include_router(chatbot.router)
 
     return app
 

@@ -70,6 +70,17 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = Field(default=200, env="CHUNK_OVERLAP", ge=0, le=1000)
     MAX_FILE_SIZE: int = Field(default=50 * 1024 * 1024, env="MAX_FILE_SIZE")  # 50MB
 
+    # Chatbot session settings
+    CHATBOT_SESSION_TTL_SECONDS: int = Field(
+        default=3600, env="CHATBOT_SESSION_TTL_SECONDS", ge=60, le=86400
+    )  # 1 hour default, min 1 minute, max 24 hours
+    CHATBOT_MAX_SESSIONS: int = Field(
+        default=1000, env="CHATBOT_MAX_SESSIONS", ge=10, le=100000
+    )  # Max concurrent sessions in memory
+    CHATBOT_CLEANUP_INTERVAL_SECONDS: int = Field(
+        default=300, env="CHATBOT_CLEANUP_INTERVAL_SECONDS", ge=30, le=3600
+    )  # Run cleanup every 5 minutes by default
+
     # Environment
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "DEBUG")
