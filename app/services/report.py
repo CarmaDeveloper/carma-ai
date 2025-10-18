@@ -271,12 +271,8 @@ class ReportGenerationService:
         references = set()
 
         for doc in documents:
-            if doc.metadata and "source" in doc.metadata:
-                source_path = doc.metadata["source"]
-                # Extract filename from path
-                filename = (
-                    source_path.split("/")[-1] if "/" in source_path else source_path
-                )
+            if doc.metadata and "file_name" in doc.metadata:
+                filename = doc.metadata["file_name"]
                 if filename:
                     references.add(filename)
 
