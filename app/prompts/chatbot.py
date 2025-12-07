@@ -1,5 +1,8 @@
 """Prompts for chatbot conversations."""
 
+from typing import Optional
+
+# Base system prompt without RAG context
 CHATBOT_SYSTEM_PROMPT = (
     "You are Carmi, a professional medical information assistant designed to support healthcare professionals and patients. "
     "Your role is to provide accurate, evidence-based medical information while maintaining appropriate safety boundaries.\n\n"
@@ -57,3 +60,49 @@ CHATBOT_SYSTEM_PROMPT = (
     "Remember: Your goal is to enhance medical knowledge and communication, not replace professional healthcare delivery. "
     "Keep your responses concise and avoid lengthy explanations. Format all responses in Markdown for optimal readability and structure."
 )
+
+# RAG context section to be inserted into system prompt when context is available
+RAG_CONTEXT_SECTION = (
+    "\n\n## Knowledge Base Context:\n"
+    "You have been provided with relevant documents from our knowledge base to help answer the user's question. "
+    "Use this context to provide accurate, well-informed responses.\n\n"
+    "### Guidelines for Using Context:\n"
+    "- Prioritize information from the provided context when answering questions\n"
+    "- If the context contains relevant information, incorporate it naturally into your response\n"
+    "- You may reference the source documents when citing specific information\n"
+    "- If the context doesn't fully address the question, supplement with your general medical knowledge\n"
+    "- If the context contradicts your general knowledge, prefer the context but note any concerns\n"
+    "- Never fabricate information that isn't supported by context or established medical knowledge\n\n"
+    "### Retrieved Context:\n"
+    "{context}\n"
+)
+
+# Notice when RAG is enabled but no relevant documents were found
+RAG_NO_CONTEXT_NOTICE = (
+    "\n\n## Knowledge Base Context:\n"
+    "No relevant documents were found in the knowledge base for this query. "
+    "Please respond based on your general medical knowledge while maintaining all safety guidelines."
+)
+
+
+def build_system_prompt(context: Optional[str] = None) -> str:
+    """
+    Build the system prompt with optional RAG context.
+
+    Args:
+        context: Formatted context string from RAG retrieval.
+                 If None, returns the base system prompt without RAG section.
+
+    Returns:
+        Complete system prompt string.
+    """
+    if context is None:
+        return CHATBOT_SYSTEM_PROMPT
+
+    if not context.strip():
+        # RAG was attempted but no documents found
+        return CHATBOT_SYSTEM_PROMPT + RAG_NO_CONTEXT_NOTICE
+
+    # Insert context into RAG section
+    rag_section = RAG_CONTEXT_SECTION.format(context=context)
+    return CHATBOT_SYSTEM_PROMPT + rag_section

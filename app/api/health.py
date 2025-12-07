@@ -4,7 +4,6 @@ from fastapi import APIRouter, Query
 
 from app.core.health import check_database_connection, get_health_status
 from app.core.logging import setup_logger
-from app.db.record_manager import record_manager_service
 
 logger = setup_logger(__name__)
 
@@ -33,10 +32,9 @@ async def health_check(
 
     # Deep health check - includes database connectivity
     try:
-        pool = await record_manager_service.get_pool()
-        db_status = await check_database_connection(pool)
+        db_status = await check_database_connection()
     except Exception as e:
-        logger.error(f"Deep health check failed to get database pool: {e}")
+        logger.error(f"Deep health check failed: {e}")
         db_status = False
 
     return get_health_status(db_status)

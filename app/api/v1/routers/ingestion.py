@@ -1,22 +1,26 @@
 """Ingestion API endpoints for document processing."""
 
-from fastapi import APIRouter, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, HTTPException, status, BackgroundTasks, Depends
 from fastapi.responses import JSONResponse
 
 from app.core.exceptions import VectorStoreError
 from app.core.logging import setup_logger
-from app.models.ingestion import (
+from app.dependencies import get_ingestion_service
+from app.db.database import async_session_factory
+from app.repositories import DocumentRecordRepository
+from app.schemas.ingestion import (
     IngestionRequest,
     IngestionResponse,
     IngestionStatusResponse,
     DocumentRemovalRequest,
     DocumentRemovalResponse,
 )
-from app.services.ingestion import ingestion_service
+from app.services.document_loader import document_loader_service
+from app.services.ingestion import IngestionService
 
 logger = setup_logger(__name__)
 
-router = APIRouter(tags=["ingestion"], prefix="/v1/ingestion")
+router = APIRouter(prefix="/ingestion")
 
 
 @router.post(
@@ -50,7 +54,10 @@ router = APIRouter(tags=["ingestion"], prefix="/v1/ingestion")
     - `filename`: Name of the file to process from S3
     """,
 )
-async def ingest_document(request: IngestionRequest) -> IngestionResponse:
+async def ingest_document(
+    request: IngestionRequest,
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
+) -> IngestionResponse:
     """
     Ingest a single document from S3 into a knowledge base.
 
@@ -167,7 +174,10 @@ async def ingest_document_async(
     3. Returns the count of removed chunks
     """,
 )
-async def remove_document(request: DocumentRemovalRequest) -> DocumentRemovalResponse:
+async def remove_document(
+    request: DocumentRemovalRequest,
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
+) -> DocumentRemovalResponse:
     """
     Remove a document from a knowledge base.
 
@@ -233,7 +243,10 @@ async def remove_document(request: DocumentRemovalRequest) -> DocumentRemovalRes
     - List of all filenames in the knowledge base
     """,
 )
-async def get_ingestion_status(knowledge_id: str) -> IngestionStatusResponse:
+async def get_ingestion_status(
+    knowledge_id: str,
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
+) -> IngestionStatusResponse:
     """
     Get ingestion status for a knowledge base.
 
@@ -280,7 +293,6 @@ async def get_supported_formats() -> JSONResponse:
         List of supported file extensions and their descriptions
     """
     try:
-        from app.services.document_loader import document_loader_service
 
         extensions = document_loader_service.get_supported_extensions()
 
@@ -330,7 +342,10 @@ async def _background_ingest_task(request: IngestionRequest) -> None:
     try:
         logger.info(f"Background: Starting S3 ingestion for {request.filename}")
 
-        response = await ingestion_service.ingest_document(request)
+        async with async_session_factory() as session:
+            repo = DocumentRecordRepository(session)
+            ingestion_service = IngestionService(document_record_repo=repo)
+            response = await ingestion_service.ingest_document(request)
 
         if response.success:
             logger.info(

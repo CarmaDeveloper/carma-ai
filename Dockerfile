@@ -63,7 +63,7 @@ WORKDIR /home/carma-ai
 
 # Copy application code with proper ownership
 COPY --chown=carma-ai:carma-ai app/ ./app/
-COPY --chown=carma-ai:carma-ai run.py ./
+COPY --chown=carma-ai:carma-ai main.py ./
 
 # Switch to non-root user
 USER carma-ai
@@ -72,4 +72,4 @@ USER carma-ai
 EXPOSE 8000
 
 # Production command
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

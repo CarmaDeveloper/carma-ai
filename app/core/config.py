@@ -1,7 +1,7 @@
 """Application configuration."""
 
 import os
-from typing import List, Optional
+from typing import Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings
@@ -10,20 +10,20 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Application settings."""
 
-    APP_NAME: str = "Carma AI"
-
-    # Server settings
+    APP_NAME: str = Field(default="Carma AI", env="APP_NAME")
+    DOCS_PORT: int = Field(default=8000, env="DOCS_PORT")
 
     # PostgreSQL settings
-    POSTGRES_USER: str = os.getenv("POSTGRES_USER", "postgres")
-    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "postgres")
-    POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", "localhost")
-    POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
-    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "carma_ai")
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL",
-        f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}",
-    )
+    POSTGRES_USER: str = Field(default="postgres", env="POSTGRES_USER")
+    POSTGRES_PASSWORD: str = Field(default="postgres", env="POSTGRES_PASSWORD")
+    POSTGRES_HOST: str = Field(default="localhost", env="POSTGRES_HOST")
+    POSTGRES_PORT: int = Field(default=5432, env="POSTGRES_PORT")
+    POSTGRES_DB: str = Field(default="carma_ai", env="POSTGRES_DB")
+
+    @property
+    def DATABASE_URL(self) -> str:
+        """Construct DATABASE_URL from individual PostgreSQL parameters."""
+        return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
     # Vector Store settings
     VECTOR_STORE_PROVIDER: str = Field(default="pg-vector", env="VECTOR_STORE_PROVIDER")
@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     COMPREHEND_THRESHOLD: float = Field(
         default=0.9, env="COMPREHEND_THRESHOLD", ge=0, le=1
     )
-    COMPREHEND_TYPES: List[str] = Field(
+    COMPREHEND_TYPES: list[str] = Field(
         default=["LOCATION", "PERSON"], env="COMPREHEND_TYPES"
     )
 
@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     AUTH_TOKEN: str = Field(default="", env="AUTH_TOKEN")
 
     # CORS settings
-    CORS_ORIGINS: list = ["*"]  # For production, replace with specific origins
+    CORS_ORIGINS: list[str] = Field(default=["*"], env="CORS_ORIGINS")
 
     # Ingestion settings
     CHUNK_SIZE: int = Field(default=1000, env="CHUNK_SIZE", ge=100, le=4000)
@@ -71,20 +71,38 @@ class Settings(BaseSettings):
     MAX_FILE_SIZE: int = Field(default=50 * 1024 * 1024, env="MAX_FILE_SIZE")  # 50MB
 
     # Chatbot session settings
-    CHATBOT_SESSION_TTL_SECONDS: int = Field(
-        default=3600, env="CHATBOT_SESSION_TTL_SECONDS", ge=60, le=86400
-    )  # 1 hour default, min 1 minute, max 24 hours
-    CHATBOT_MAX_SESSIONS: int = Field(
-        default=1000, env="CHATBOT_MAX_SESSIONS", ge=10, le=100000
-    )  # Max concurrent sessions in memory
     CHATBOT_CLEANUP_INTERVAL_SECONDS: int = Field(
-        default=300, env="CHATBOT_CLEANUP_INTERVAL_SECONDS", ge=30, le=3600
-    )  # Run cleanup every 5 minutes by default
+        default=60 * 60, env="CHATBOT_CLEANUP_INTERVAL_SECONDS", ge=30, le=3600
+    )  # Run cleanup every 1 hour by default
+    # Chatbot persistence settings
+    CHATBOT_SESSION_RETENTION_DAYS: int = Field(
+        default=90, env="CHATBOT_SESSION_RETENTION_DAYS", ge=1, le=365
+    )  # Number of days to retain inactive sessions
+    CHATBOT_MESSAGE_HISTORY_LIMIT: int = Field(
+        default=50, env="CHATBOT_MESSAGE_HISTORY_LIMIT", ge=10, le=500
+    )  # Max messages to load from history
+
+    # RAG (Retrieval-Augmented Generation) settings
+    RAG_DEFAULT_K: int = Field(
+        default=4, env="RAG_DEFAULT_K", ge=1, le=10
+    )  # Default number of documents to retrieve per query
+    RAG_DEFAULT_SCORE_THRESHOLD: Optional[float] = Field(
+        default=None, env="RAG_DEFAULT_SCORE_THRESHOLD", ge=0.0, le=1.0
+    )  # Default minimum similarity score (None = no filtering)
+    RAG_MAX_CONTEXT_LENGTH: int = Field(
+        default=6000, env="RAG_MAX_CONTEXT_LENGTH", ge=500, le=32000
+    )  # Max character length for context (roughly ~1500 tokens)
+    RAG_INCLUDE_HISTORY_QUERIES: bool = Field(
+        default=True, env="RAG_INCLUDE_HISTORY_QUERIES"
+    )  # Whether to use conversation history for additional search queries
+    RAG_MAX_HISTORY_QUERIES: int = Field(
+        default=2, env="RAG_MAX_HISTORY_QUERIES", ge=0, le=5
+    )  # Max number of history messages to use as search queries
 
     # Environment
-    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
-    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "DEBUG")
-    DEBUG: bool = os.getenv("DEBUG", True)
+    ENVIRONMENT: str = Field(default="development", env="ENVIRONMENT")
+    LOG_LEVEL: str = Field(default="DEBUG", env="LOG_LEVEL")
+    DEBUG: bool = Field(default=True, env="DEBUG")
 
     class Config:
         env_file = ".env"

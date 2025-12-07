@@ -7,8 +7,8 @@ from langchain_core.documents import Document
 
 from app.core.exceptions import VectorStoreError
 from app.core.logging import setup_logger
-from app.db.record_manager import record_manager_service
-from app.models.ingestion import (
+from app.repositories import DocumentRecordRepositoryProtocol
+from app.schemas.ingestion import (
     IngestionRequest,
     IngestionResponse,
     IngestionStatusResponse,
@@ -26,13 +26,23 @@ logger = setup_logger(__name__)
 class IngestionService:
     """Main service for document ingestion pipeline."""
 
-    def __init__(self) -> None:
-        """Initialize ingestion service."""
+    def __init__(
+        self,
+        document_record_repo: DocumentRecordRepositoryProtocol,
+    ) -> None:
+        """
+        Initialize ingestion service.
+
+        Args:
+            document_record_repo: Document record repository (required for dependency injection)
+        """
         self.document_loader = document_loader_service
         self.text_splitter = text_splitter_service
         self.embedding_service = embedding_service
         self.vector_store = vector_store_service
-        self.record_manager = record_manager_service
+        self._document_record_repo = document_record_repo
+
+        logger.info("Ingestion service initialized with database persistence")
 
     def generate_document_ids(self, count: int) -> List[str]:
         """
@@ -95,7 +105,7 @@ class IngestionService:
             )
 
             # Step 7: Record file metadata
-            await self.record_manager.add_file_records(
+            await self._document_record_repo.add_file_records(
                 filename, document_ids, knowledge_id
             )
 
@@ -154,7 +164,7 @@ class IngestionService:
 
         try:
             # Get document IDs for the file
-            document_ids = await self.record_manager.remove_file_records(
+            document_ids = await self._document_record_repo.remove_file_records(
                 filename, knowledge_id
             )
 
@@ -209,7 +219,9 @@ class IngestionService:
         logger.debug(f"Getting ingestion status for knowledge_id: {knowledge_id}")
 
         try:
-            stats = await self.record_manager.get_knowledge_base_stats(knowledge_id)
+            stats = await self._document_record_repo.get_knowledge_base_stats(
+                knowledge_id
+            )
 
             return IngestionStatusResponse(
                 knowledge_id=knowledge_id,
@@ -279,7 +291,3 @@ class IngestionService:
             metadatas=metadatas,
             ids=document_ids,
         )
-
-
-# Singleton instance
-ingestion_service = IngestionService()

@@ -1,6 +1,6 @@
 """LLM model service for text generation."""
 
-from langchain_community.chat_models import BedrockChat
+from langchain_aws.chat_models import ChatBedrock
 
 from app.core.config import settings
 from app.core.exceptions import ModelError
@@ -55,7 +55,7 @@ class ModelService:
 
             logger.info(f"Model kwargs: {model_kwargs}")
 
-            return BedrockChat(
+            return ChatBedrock(
                 region_name=settings.BEDROCK_REGION,
                 model_id=settings.BEDROCK_MODEL,
                 model_kwargs=model_kwargs,

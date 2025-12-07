@@ -6,7 +6,7 @@ from langchain_core.documents import Document
 
 from app.core.exceptions import ModelError
 from app.core.logging import setup_logger
-from app.models.report import (
+from app.schemas.report import (
     QAItem,
     ReportGenerationRequest,
     ReportGenerationResponse,

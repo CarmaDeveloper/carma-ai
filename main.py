@@ -3,13 +3,15 @@
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import reports, health, ingestion, comprehend, chat, chatbot
-from app.core.auth import AuthenticationMiddleware
+from app.api import health
+from app.api.v1.api import api_router_v1
+from app.core.auth import AuthenticationMiddleware, api_key_header
 from app.core.config import settings
 from app.core.logging import setup_logger
+from app.db.database import Base, engine
 
 
 @asynccontextmanager
@@ -19,18 +21,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger = setup_logger(__name__)
     logger.info(f"Starting CARMA AI Application, version={app.version}")
 
-    # Import and start chatbot service background tasks
-    from app.services.chatbot import chatbot_service
-
-    await chatbot_service.startup()
+    # Initialize database tables (create if they don't exist)
+    try:
+        async with engine.begin() as conn:
+            # Create all tables defined in Base.metadata
+            await conn.run_sync(Base.metadata.create_all)
+            logger.info("Database tables initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database tables: {e}", exc_info=True)
+        raise
 
     yield
 
     # Shutdown
     logger.info("Shutting down CARMA AI Application")
-
-    # Stop chatbot service background tasks
-    await chatbot_service.shutdown()
 
 
 def create_application() -> FastAPI:
@@ -42,16 +46,14 @@ def create_application() -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc" if settings.DEBUG else None,
         servers=[
-            {"url": "http://localhost:8000", "description": "Local Enviroment"},
             {
-                "url": "https://aicarma.bytequest.solutions",
-                "description": "Production Environment",
-            },
+                "url": f"http://localhost:{settings.DOCS_PORT}",
+                "description": "Local Enviroment",
+            }
         ],
         lifespan=lifespan,
     )
 
-    # Authentication middleware (must be added before other middlewares)
     app.add_middleware(AuthenticationMiddleware)
 
     # CORS middleware
@@ -64,12 +66,8 @@ def create_application() -> FastAPI:
     )
 
     # Include API router
-    app.include_router(reports.router)
     app.include_router(health.router)
-    app.include_router(ingestion.router)
-    app.include_router(comprehend.router)
-    app.include_router(chat.router)
-    app.include_router(chatbot.router)
+    app.include_router(api_router_v1, dependencies=[Depends(api_key_header)])
 
     return app
 

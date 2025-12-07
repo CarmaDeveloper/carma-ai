@@ -1,19 +1,20 @@
 """Health check module for application monitoring."""
 
-import asyncpg
 from typing import Optional
+from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.logging import setup_logger
+from app.db.database import engine
 
 logger = setup_logger(__name__)
 
 
-async def check_database_connection(pool: asyncpg.Pool) -> bool:
+async def check_database_connection() -> bool:
     """Check if the database connection is healthy."""
     try:
-        async with pool.acquire() as connection:
-            await connection.execute("SELECT 1")
+        async with engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
     except Exception as e:
         logger.error(f"Database connection check failed: {e}")
         return False

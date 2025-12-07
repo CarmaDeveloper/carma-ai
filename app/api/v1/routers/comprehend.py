@@ -4,12 +4,12 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.core.exceptions import ComprehendError
 from app.core.logging import setup_logger
-from app.models.comprehend import ComprehendRequest, ComprehendResponse
+from app.schemas.comprehend import ComprehendRequest, ComprehendResponse
 from app.services.comprehend import comprehend_service
 
 logger = setup_logger(__name__)
 
-router = APIRouter(tags=["comprehend"], prefix="/v1/comprehend")
+router = APIRouter(prefix="/comprehend")
 
 
 @router.post(
