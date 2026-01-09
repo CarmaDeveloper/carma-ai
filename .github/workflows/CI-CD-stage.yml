@@ -3,7 +3,7 @@ name: Deploy CARMA AI to Amazon ECS
 on:
   push:
     branches:
-      - main
+      - staging
     tags-ignore:
       - "*"
 
