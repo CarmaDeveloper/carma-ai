@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     APP_NAME: str = Field(default="Carma AI", env="APP_NAME")
     DOCS_PORT: int = Field(default=8000, env="DOCS_PORT")
 
+    # Database settings
+    CREATE_TABLES: bool = Field(default=False, env="CREATE_TABLES")
+
     # PostgreSQL settings
     POSTGRES_USER: str = Field(default="postgres", env="POSTGRES_USER")
     POSTGRES_PASSWORD: str = Field(default="postgres", env="POSTGRES_PASSWORD")
@@ -106,6 +109,7 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 
 settings = Settings()

@@ -3,7 +3,7 @@
 import tempfile
 from pathlib import Path
 from typing import Optional, Tuple
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote
 
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
@@ -80,6 +80,38 @@ class S3Service:
             S3 URL in format s3://bucket/knowledge/knowledge_id/filename
         """
         return f"s3://{settings.S3_BUCKET_NAME}/knowledge/{knowledge_id}/{filename}"
+
+    def s3_uri_to_https_url(self, s3_url: str) -> Optional[str]:
+        """
+        Convert S3 URI to HTTPS URL.
+
+        Args:
+            s3_url: S3 URI in format s3://bucket/key (e.g., s3://carma-bucket/knowledge/uuid/file.pdf)
+
+        Returns:
+            HTTPS URL in format https://bucket.s3.region.amazonaws.com/url-encoded-key
+            (e.g., https://carma-bucket.s3.ca-central-1.amazonaws.com/knowledge/uuid/file.pdf)
+            Returns None if the URL is not a valid S3 URI.
+        """
+        if not s3_url:
+            return None
+
+        try:
+            bucket, key = self.parse_s3_url(s3_url)
+            # URL-encode the key, preserving slashes for path structure
+            encoded_key = quote(key)
+            return f"https://{bucket}.s3.{self.region_name}.amazonaws.com/{encoded_key}"
+        except VectorStoreError as e:
+            logger.warning(
+                f"Failed to convert S3 URI to HTTPS URL: {s3_url}, error: {e}"
+            )
+            return None
+        except Exception as e:
+            logger.error(
+                f"Unexpected error converting S3 URI to HTTPS URL: {s3_url}, error: {e}",
+                exc_info=True,
+            )
+            return None
 
     def extract_filename_from_s3_path(self, s3_url: str) -> str:
         """

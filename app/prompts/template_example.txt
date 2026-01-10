@@ -1,0 +1,123 @@
+<Title>
+ED Admission Note
+<Content>
+Chief Complaint   
+
+[Briefly describe the patient's presenting issue or complaint, including the reason for visit, current concerns, relevant signs and symptoms, and any associated symptoms mentioned] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences. Use as many lines as needed to accurately summarise the presenting complaint.)
+
+
+
+Past Medical History  
+
+[Document any known chronic medical conditions] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences or list format as appropriate.)  
+
+[Provide details of any previous surgeries or hospitalisations] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences or list format as appropriate.)  
+
+[List all current medications and dosages] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in list format.)  
+
+[Document any known allergies, particularly to medications] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in list format.)
+
+
+
+Social History  
+
+[Document the patient's current or past smoking history] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences.)  
+
+[Describe alcohol consumption habits] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences.)  
+
+[Indicate any illicit drug use] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences.)  
+
+[Provide details of the patient’s current or previous occupation] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences.)
+
+
+
+Family History  
+
+[Summarise any relevant family history of medical conditions] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences.)
+
+
+
+Physical Examination  
+
+[Vital signs recorded, including blood pressure, heart rate, respiratory rate, temperature, and oxygen saturation] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in list or sentence format.)  
+
+[General appearance and overall state of health, including any general findings noted on examination] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences.)  
+
+[Cardiovascular examination findings including heart rate, rhythm, presence of murmurs or other abnormalities] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences.)  
+
+[Respiratory findings including breath sounds, presence of wheeze or crackles] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences.)  
+
+[Abdominal findings including tenderness, palpation findings, bowel sounds, or distension] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences.)  
+
+[Musculoskeletal examination findings including joint range of motion, strength, deformities or tenderness] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences.)  
+
+[Neurological findings including mental status, cranial nerve assessment, motor and sensory function, coordination, and reflexes] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences.)
+
+
+
+Investigations  
+
+[Pathology tests ordered or reviewed, including blood tests, urine tests, and relevant results] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences.)  
+
+[Imaging performed or requested such as X-rays, CT scans, MRIs, and their findings if available] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences.)  
+
+[Other investigations including ECGs, ultrasounds, or diagnostic procedures conducted] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences.)
+
+
+
+Assessment  
+
+[Provide the presumed diagnosis based on information obtained during the consultation] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences.)  
+
+[List any differential diagnoses being considered, if applicable] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences or as a short list.)
+
+
+
+Plan/Treatment  
+
+[Outline immediate management provided during the visit, including medications given, procedures performed, or treatments initiated] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences.)  
+
+[Document any further investigations that are planned or pending] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences.)  
+
+[Include details of any referrals made to other services or specialists] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences.)  
+
+[Document any discharge advice, follow-up plans, or instructions given to the patient] (Only include if explicitly mentioned in the transcript, contextual notes or clinical note; otherwise omit completely. Write in full sentences.)
+
+
+
+(Never come up with your own patient details, findings, assessment, or treatment plan – use only the transcript, contextual notes or clinical note as a reference for the information included in your output. If any information related to a placeholder has not been explicitly mentioned in the transcript or note, you must not state that the information has not been provided in your output; simply leave the relevant placeholder or section out entirely. Use full sentences or lists as appropriate to clearly document the relevant clinical information.)
+
+---------------------------------------------------------------------
+
+<Title>
+create an issue list with ICD-10 codes.
+<Content>
+Issue List
+
+
+
+"Patient Name: [patient's full legal name] (Only include if explicitly mentioned in transcript, context or clinical note, else omit section entirely.)
+
+Date of Birth: [patient's date of birth] (Only include if explicitly mentioned in transcript, context or clinical note, else omit section entirely.)
+
+Medical Record Number: [patient's unique medical record number] (Only include if explicitly mentioned in transcript, context or clinical note, else omit section entirely.)
+
+Date Generated: [current date of document generation] (Only include if explicitly mentioned in transcript, context or clinical note, else omit section entirely.)"
+
+
+
+"Active Issues:"
+
+- "[description of each active medical or psychosocial issue, including its onset, severity, and current status, followed by the corresponding ICD-10 code] (Only include if explicitly mentioned in transcript, context or clinical note, else omit section entirely.)
+
+"Resolved Issues:"
+
+- "[description of each resolved medical or psychosocial issue, including its resolution date and any relevant outcomes, followed by the corresponding ICD-10 code] (Only include if explicitly mentioned in transcript, context or clinical note, else omit section entirely.)
+
+"Comments:"
+
+"[any additional relevant information, considerations, or notes pertaining to the patient's issues list] (Only include if explicitly mentioned in transcript, context or clinical note, else omit section entirely.)"
+
+
+
+(Never come up with your own patient details, assessment, plan, interventions, evaluation, and plan for continuing care - use only the transcript, contextual notes or clinical note as a reference for the information included in your note. If any information related to a placeholder has not been explicitly mentioned in the transcript, contextual notes or clinical note, you must not state the information has not been explicitly mentioned in your output, just leave the relevant placeholder or omit the placeholder completely.) (Use as many lines, paragraphs or bullet points, depending on the format, as needed to capture all the relevant information from the transcript.)

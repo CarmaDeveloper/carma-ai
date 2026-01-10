@@ -26,9 +26,8 @@ class SessionModel(Base):
         PG_UUID(as_uuid=True),
         primary_key=True,
         default=uuid4,
-        index=True,
     )
-    user_id = Column(String, nullable=True, index=True)
+    user_id = Column(String, nullable=True)
     title = Column(Text, nullable=True)
     created_at = Column(
         DateTime(timezone=True),
@@ -41,9 +40,8 @@ class SessionModel(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
         server_default=text("CURRENT_TIMESTAMP"),
-        index=True,
     )
-    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    is_active = Column(Boolean, default=True, nullable=False)
     session_metadata = Column(
         "metadata",
         JSONB,
@@ -62,13 +60,10 @@ class SessionModel(Base):
 
     # Indexes
     __table_args__ = (
-        Index("idx_chatbot_sessions_user_id", "user_id"),
-        Index("idx_chatbot_sessions_last_accessed", "last_accessed_at"),
         Index(
-            "idx_chatbot_sessions_active",
-            "is_active",
-            postgresql_where=text("is_active = true"),
+            "idx_sessions_user_last_accessed", "user_id", text("last_accessed_at DESC")
         ),
+        Index("idx_sessions_active_last_accessed", "is_active", "last_accessed_at"),
     )
 
     def __repr__(self) -> str:

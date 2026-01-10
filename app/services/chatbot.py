@@ -9,16 +9,22 @@ from uuid import UUID
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
 
 from app.core.config import settings
+from app.core.exceptions import ModelError
 from app.core.logging import setup_logger
 from app.repositories import (
     SessionRepositoryProtocol,
     MessageRepositoryProtocol,
     DocumentRecordRepositoryProtocol,
 )
-from app.prompts.chatbot import build_system_prompt
+from app.prompts.chatbot import (
+    build_system_prompt,
+    build_session_title_prompt,
+    SESSION_TITLE_MAX_LENGTH,
+)
 from app.schemas.chatbot import DocumentReference
-from app.services.model import model_service
+from app.services.llm import LLMService, ModelConfig
 from app.services.rag_retrieval import RAGRetrievalService
+from app.services.s3 import s3_service
 
 logger = setup_logger(__name__)
 
@@ -52,11 +58,58 @@ class ChatbotService:
             document_record_repo=document_record_repo
         )
 
+        # Initialize LLM service with default config
+        self.llm_service = LLMService()
+
         logger.info("Chatbot service initialized with database persistence and RAG")
 
     def _generate_id(self) -> str:
         """Generate a unique UUID."""
         return str(uuid.uuid4())
+
+    async def _generate_session_title(self, user_message: str) -> str:
+        """
+        Generate a meaningful session title using LLM based on the first user message.
+
+        Args:
+            user_message: The first user message in the session
+
+        Returns:
+            A meaningful title (max SESSION_TITLE_MAX_LENGTH characters)
+        """
+        try:
+            prompt = build_session_title_prompt(user_message)
+            messages = [HumanMessage(content=prompt)]
+            response, _ = await self.llm_service.generate(messages)
+
+            # Clean and truncate the title
+            title = response.strip().strip("\"'")
+
+            if title:
+                if len(title) > SESSION_TITLE_MAX_LENGTH:
+                    title = title[: SESSION_TITLE_MAX_LENGTH - 3] + "..."
+
+                logger.debug(f"Generated session title: {title}")
+                return title
+
+            logger.warning("LLM returned empty title, using fallback")
+
+        except ModelError as e:
+            logger.warning(
+                f"LLM model error while generating session title, using fallback: {e}"
+            )
+        except Exception as e:
+            logger.warning(
+                f"Unexpected error generating session title, using fallback: {e}",
+                exc_info=True,
+            )
+
+        # Fallback to truncated user message
+        return (
+            user_message[:SESSION_TITLE_MAX_LENGTH]
+            if user_message
+            else "New Conversation"
+        )
 
     async def _load_conversation_history(self, session_id: str) -> List[BaseMessage]:
         """
@@ -174,8 +227,8 @@ class ChatbotService:
             session_id = self._generate_id()
             logger.info(f"Generated new session ID: {session_id}")
 
-            # Generate title from first 50 characters of first message
-            title = message[:50] if message else None
+            # Generate meaningful title using LLM
+            title = await self._generate_session_title(message)
 
             # Create session in database
             try:
@@ -282,11 +335,17 @@ class ChatbotService:
             "message_created_at": ai_message_created_at,
         }
 
-        # Include RAG references in session event (just source URLs)
+        # Include RAG references in session event (convert S3 URIs to HTTPS URLs, deduplicated)
         if rag_context:
-            session_event_data["references"] = [
-                ref.source_url for ref in rag_references if ref.source_url
-            ]
+            # Process URLs: convert S3 URIs to HTTPS URLs
+            processed_urls = []
+            for ref in rag_references:
+                if ref.source_url:
+                    https_url = s3_service.s3_uri_to_https_url(ref.source_url)
+                    processed_urls.append(https_url or ref.source_url)
+
+            # Deduplicate while preserving order
+            session_event_data["references"] = list(dict.fromkeys(processed_urls))
             session_event_data["document_count"] = len(rag_context.documents)
             session_event_data["knowledge_ids_searched"] = (
                 rag_context.knowledge_ids_searched
@@ -307,7 +366,6 @@ class ChatbotService:
 
         # Get model and stream response
         try:
-            model = model_service.get_model()
             full_response = ""
 
             # Variables to capture token usage
@@ -316,27 +374,30 @@ class ChatbotService:
             total_tokens = 0
 
             # Stream the AI response with full conversation history
-            async for chunk in model.astream(messages_for_model):
-                content = getattr(chunk, "content", None)
+            async for chunk, token_usage in self.llm_service.generate_stream(
+                messages_for_model
+            ):
+                # If we have content, yield it
+                if chunk:
+                    full_response += chunk
+                    yield ("chatbot.chunk", {"content": chunk})
 
-                # Only process chunks with actual content (skip empty metadata chunks)
-                if content and isinstance(content, str) and len(content.strip()) > 0:
-                    full_response += content
-                    yield ("chatbot.chunk", {"content": content})
-
-                # Capture token usage from usage_metadata if available
-                usage_metadata = getattr(chunk, "usage_metadata", None)
-                if usage_metadata:
-                    input_tokens = usage_metadata.get("input_tokens", 0)
-                    output_tokens = usage_metadata.get("output_tokens", 0)
-                    total_tokens = usage_metadata.get("total_tokens", 0)
+                # If we have token usage (usually in final chunk), capture it
+                if token_usage:
+                    input_tokens = token_usage.get("input_tokens", 0)
+                    output_tokens = token_usage.get("output_tokens", 0)
+                    total_tokens = token_usage.get("total_tokens", 0)
                     logger.info(
                         f"Token usage - Input: {input_tokens}, Output: {output_tokens}, Total: {total_tokens}"
                     )
 
+            # Since we're using the new service, we don't have direct access to the model instance anymore
+            # to get the model_id unless we check configuration. For now we'll use the one from config.
+            model_id = self.llm_service.model_id
+
             # Build message metadata including RAG info
             ai_message_metadata: Dict[str, Any] = {
-                "model": getattr(model, "model_id", "unknown"),
+                "model": model_id,
                 **(metadata or {}),
             }
 

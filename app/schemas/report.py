@@ -87,6 +87,12 @@ class ReportGenerationRequest(BaseModel):
                             {
                                 "question": "Are you taking any medications?",
                                 "answer": "Yes, metformin",
+                                "sub_questions": [
+                                    {
+                                        "question": "Dosage?",
+                                        "answer": "500mg",
+                                    }
+                                ],
                             },
                         ],
                     },
@@ -141,3 +147,63 @@ class ReportGenerationResponse(BaseModel):
                 },
             }
         }
+
+
+# Models for Insight Generation
+
+class OptionDetail(BaseModel):
+    title: str = Field(..., alias="title")
+    description: Optional[str] = Field(None, alias="description")
+
+
+class NumericScaleDetail(BaseModel):
+    min: int = Field(..., alias="min")
+    max: int = Field(..., alias="max")
+    step: int = Field(..., alias="step")
+    label1: str = Field(..., alias="label1")
+    label2: str = Field(..., alias="label2")
+    label3: str = Field(..., alias="label3")
+
+
+class QuestionDetail(BaseModel):
+    """Question detail with response."""
+    title: str = Field(..., alias="title")
+    description: Optional[str] = Field(None, alias="description")
+    type: str = Field(..., alias="type")
+    options: Optional[List[OptionDetail]] = Field(None, alias="options")
+    selected_options: Optional[List[OptionDetail]] = Field(None, alias="selectedOptions")
+    patient_text_response: Optional[str] = Field(None, alias="patientTextResponse")
+    numeric_scale: Optional[NumericScaleDetail] = Field(None, alias="numericScale")
+    selected_value: Optional[int] = Field(None, alias="selectedValue")
+
+
+class QuestionResponseDetail(BaseModel):
+    question: QuestionDetail = Field(..., alias="question")
+
+
+class CategoryScoreDetail(BaseModel):
+    name: str = Field(..., alias="name")
+    value: str = Field(..., alias="value")
+
+
+class CategoryDetail(BaseModel):
+    id: str = Field(..., alias="id")
+    name: str = Field(..., alias="name")
+    scores: Optional[List[CategoryScoreDetail]] = Field(None, alias="scores")
+
+
+
+class ReportItemDetail(BaseModel):
+    questionnaire_title: str = Field(..., alias="questionnaireTitle")
+    report_id: str = Field(..., alias="reportId")
+    category: CategoryDetail = Field(..., alias="category")
+    patient_response: Optional[List[QuestionResponseDetail]] = Field(None, alias="patientResponse")
+    hcp_response: Optional[List[QuestionResponseDetail]] = Field(None, alias="hcpResponse")
+    completed_at: str = Field(..., alias="completedAt")
+
+
+class InsightGenerationRequest(BaseModel):
+    """Request model for insight generation."""
+    report: List[ReportItemDetail] = Field(..., description="List of report items")
+    knowledge_id: Optional[str] = Field(None, alias="knowledgeId", description="Optional knowledge base ID for context retrieval")
+    prompt: Optional[str] = Field(None, description="Optional prompt for insight generation")

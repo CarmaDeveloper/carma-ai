@@ -106,3 +106,30 @@ def build_system_prompt(context: Optional[str] = None) -> str:
     # Insert context into RAG section
     rag_section = RAG_CONTEXT_SECTION.format(context=context)
     return CHATBOT_SYSTEM_PROMPT + rag_section
+
+
+# Session title configuration
+SESSION_TITLE_MAX_LENGTH = 50
+
+# Session title generation prompt
+SESSION_TITLE_PROMPT = (
+    f"Generate a concise, meaningful title (maximum {SESSION_TITLE_MAX_LENGTH} characters) for a chat conversation "
+    "that starts with this message.\n"
+    "The title should capture the essence of what the user is asking about.\n"
+    "Return ONLY the title, nothing else. No quotes, no prefixes, just the title text.\n\n"
+    "User message: {message}\n\n"
+    "Title:"
+)
+
+
+def build_session_title_prompt(message: str) -> str:
+    """
+    Build the prompt for generating a session title.
+
+    Args:
+        message: The first user message in the session.
+
+    Returns:
+        Complete prompt string for title generation.
+    """
+    return SESSION_TITLE_PROMPT.format(message=message)

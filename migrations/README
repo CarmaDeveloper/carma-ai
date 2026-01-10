@@ -1,0 +1,56 @@
+# Database Migrations
+
+This directory contains Alembic migration scripts for database schema changes.
+
+## Common Commands
+
+### Create a Migration
+Generate a new migration script after modifying models.
+```bash
+alembic revision --autogenerate -m "describe_changes"
+```
+
+### Apply Migrations
+Upgrade to the latest version.
+```bash
+alembic upgrade head
+```
+
+Upgrade to a specific revision.
+```bash
+alembic upgrade <revision_id>
+```
+
+### Revert Migrations
+Downgrade by one revision.
+```bash
+alembic downgrade -1
+```
+
+Downgrade to a specific revision.
+```bash
+alembic downgrade <revision_id>
+```
+
+### Stamp Database
+Mark the database as being at a specific revision without running migrations.
+```bash
+alembic stamp <revision_id>
+```
+
+Mark as latest (head).
+```bash
+alembic stamp head
+```
+
+### Check Status
+Show the current revision of the database.
+```bash
+alembic current
+```
+
+### View History
+Show migration history.
+```bash
+alembic history
+```

@@ -18,9 +18,9 @@ class DocumentRecordModel(Base):
 
     __tablename__ = "document_records"
 
-    filename = Column(Text, nullable=False, index=True)
-    knowledge_id = Column(Text, nullable=False, index=True)
-    document_id = Column(Text, nullable=False, index=True)
+    filename = Column(Text, nullable=False)
+    knowledge_id = Column(Text, nullable=False)
+    document_id = Column(Text, nullable=False)
     created_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -31,9 +31,7 @@ class DocumentRecordModel(Base):
     # Composite primary key
     __table_args__ = (
         PrimaryKeyConstraint("filename", "knowledge_id", "document_id"),
-        Index("idx_document_records_filename", "filename"),
         Index("idx_document_records_knowledge_id", "knowledge_id"),
-        Index("idx_document_records_document_id", "document_id"),
     )
 
     def __repr__(self) -> str:

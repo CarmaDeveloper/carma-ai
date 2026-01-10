@@ -63,7 +63,8 @@ WORKDIR /home/carma-ai
 
 # Copy application code with proper ownership
 COPY --chown=carma-ai:carma-ai app/ ./app/
-COPY --chown=carma-ai:carma-ai main.py ./
+COPY --chown=carma-ai:carma-ai migrations/ ./migrations/
+COPY --chown=carma-ai:carma-ai main.py alembic.ini ./
 
 # Switch to non-root user
 USER carma-ai

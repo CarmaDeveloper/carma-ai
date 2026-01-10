@@ -21,15 +21,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger = setup_logger(__name__)
     logger.info(f"Starting CARMA AI Application, version={app.version}")
 
-    # Initialize database tables (create if they don't exist)
-    try:
-        async with engine.begin() as conn:
-            # Create all tables defined in Base.metadata
-            await conn.run_sync(Base.metadata.create_all)
-            logger.info("Database tables initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize database tables: {e}", exc_info=True)
-        raise
+    # Initialize database tables only if configured to do so (e.g., in development).
+    # In production, use Alembic migrations instead.
+    if settings.CREATE_TABLES:
+        try:
+            async with engine.begin() as conn:
+                # Create all tables defined in Base.metadata
+                await conn.run_sync(Base.metadata.create_all)
+                logger.info(
+                    "Database tables initialized successfully (CREATE_TABLES is True)"
+                )
+        except Exception as e:
+            logger.error(f"Failed to initialize database tables: {e}", exc_info=True)
+            raise
+    else:
+        logger.info(
+            "Skipping auto table creation (CREATE_TABLES is False, using Alembic migrations)"
+        )
 
     yield
 

@@ -1,10 +1,16 @@
 """Report generation endpoints."""
 
+import asyncio
 from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import StreamingResponse
 
 from app.core.exceptions import ComprehendError, ModelError, VectorStoreError
 from app.core.logging import setup_logger
-from app.schemas.report import ReportGenerationRequest, ReportGenerationResponse
+from app.schemas.report import (
+    ReportGenerationRequest,
+    ReportGenerationResponse,
+    InsightGenerationRequest,
+)
 from app.services.report import report_service
 
 logger = setup_logger(__name__)
@@ -78,4 +84,54 @@ async def generate_report(request: ReportGenerationRequest) -> ReportGenerationR
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred during report generation",
+        )
+
+
+@router.post(
+    "/insights/stream",
+    summary="Generate insights from patient report data (Streaming)",
+    status_code=status.HTTP_200_OK,
+)
+async def generate_insights_stream(
+    request: InsightGenerationRequest,
+) -> StreamingResponse:
+    """
+    Generate insights from patient report data and stream the response.
+
+    This endpoint streams the following events:
+    - `insight.init`: Initialization of the generation process.
+    - `insight.content`: Chunks of the generated content.
+    - `insight.complete`: Completion of the generation.
+    - `insight.error`: Error occurred.
+
+    Args:
+        request: JSON body containing the list of report items.
+
+    Returns:
+        StreamingResponse: SSE stream.
+    """
+    try:
+        async def event_generator():
+            try:
+                async for event_type, data in report_service.stream_insight_generation(
+                    request
+                ):
+                    yield report_service.format_sse_event(event_type, data)
+            except asyncio.CancelledError:
+                logger.info("Client disconnected from insight stream.")
+                raise
+            except Exception as e:
+                logger.error(f"Error in insight event generator: {e}", exc_info=True)
+                yield report_service.format_sse_event(
+                    "insight.error",
+                    {"error": "An unexpected error occurred during insight generation"},
+                )
+
+        return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+    except Exception as e:
+        logger.error(f"Failed to initialize insight stream: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to initialize insight generation",
         )

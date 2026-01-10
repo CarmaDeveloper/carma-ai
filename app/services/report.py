@@ -1,7 +1,9 @@
 """Report generation service."""
 
-from typing import Dict, List, Set, Optional, Tuple
+import json
+from typing import AsyncGenerator, Dict, List, Set, Optional, Tuple
 
+from langchain_core.messages import HumanMessage
 from langchain_core.documents import Document
 
 from app.core.exceptions import ModelError
@@ -11,6 +13,8 @@ from app.schemas.report import (
     ReportGenerationRequest,
     ReportGenerationResponse,
     TokenUsage,
+    InsightGenerationRequest,
+    ReportItemDetail,
 )
 from app.prompts.report import (
     RAG_PROMPT_TEMPLATE,
@@ -18,8 +22,13 @@ from app.prompts.report import (
     NO_QAS_PROVIDED_TEXT,
     effective_prompt as compute_effective_prompt,
 )
+from app.prompts.insight import (
+    INSIGHT_WITH_CONTEXT_TEMPLATE,
+    INSIGHT_NO_CONTEXT_TEMPLATE,
+    DEFAULT_INSIGHT_TASK,
+)
 from app.services.comprehend import comprehend_service
-from app.services.model import model_service
+from app.services.llm import LLMService, ModelConfig
 from app.services.vector_store import vector_store_service
 
 logger = setup_logger(__name__)
@@ -27,6 +36,10 @@ logger = setup_logger(__name__)
 
 class ReportGenerationService:
     """Service for generating reports using RAG."""
+
+    def __init__(self):
+        """Initialize the report generation service."""
+        self.llm_service = LLMService()
 
     async def generate_report(
         self, request: ReportGenerationRequest
@@ -45,6 +58,8 @@ class ReportGenerationService:
             VectorStoreError: If vector store operations fail
         """
         # Get normalized scores for logging and processing
+        # INPUT: request.scores = {"health": "85", "body": "70"} OR request.legacy_score = 85.5
+        # OUTPUT: scores = {"health": 85.0, "body": 70.0} OR {"overall": 85.5}
         scores = request.get_scores()
         logger.info(
             f"Starting report generation: knowledge_id={request.knowledge_id}, "
@@ -55,7 +70,16 @@ class ReportGenerationService:
         try:
             # Step 1: Process answers through Comprehend for PII redaction
             # Extract all answers from hierarchical structure
+            # INPUT: request.qas = [
+            #   QAItem(question="How is your health?", answer="Good", sub_questions=[
+            #       QAItem(question="Any conditions?", answer="Yes, diabetes", sub_questions=None)
+            #   ])
+            # ]
+            # OUTPUT: answers = ["Good", "Yes, diabetes"]  (flat list of all answers recursively)
             answers = self._extract_all_answers(request.qas)
+
+            # INPUT: answers = ["My name is John Doe", "Email: john@example.com"]
+            # OUTPUT: redacted_answers = ["My name is [NAME]", "Email: [EMAIL]"]
             redacted_answers = await comprehend_service.redact_pii(answers)
 
             logger.info(
@@ -64,6 +88,11 @@ class ReportGenerationService:
             logger.info(f"Redacted answers: {redacted_answers}")
 
             # Step 2: Get context from vector store if knowledge_id provided
+            # INPUT: knowledge_id = "kb-123", request.qas (questions extracted from it)
+            # OUTPUT: context_docs = [
+            #   Document(page_content="Diabetes treatment guidelines...", metadata={"file_name": "doc1.pdf", "document_id": "doc-123"}),
+            #   Document(page_content="Blood sugar management...", metadata={"file_name": "doc2.pdf", "document_id": "doc-456"})
+            # ]
             context_docs = []
             if request.knowledge_id:
                 context_docs = await self._get_context(
@@ -72,24 +101,41 @@ class ReportGenerationService:
                 logger.info(f"Retrieved context: doc_count={len(context_docs)}")
 
             # Step 3: Get references from context
+            # INPUT: context_docs (list of Document objects with metadata)
+            # OUTPUT: references = {"doc1.pdf", "doc2.pdf"}  (set of unique file names)
             references = self._extract_references(context_docs)
 
             # Step 4: Get document IDs from context
+            # INPUT: context_docs (list of Document objects with metadata)
+            # OUTPUT: document_ids = {"doc-123", "doc-456"}  (set of unique document IDs)
             document_ids = self._extract_document_ids(context_docs)
             logger.info(
                 f"Extracted document IDs: doc_id_count={len(document_ids)}, ids={list(document_ids)}"
             )
 
             # Step 5: Generate report with direct model call to capture token usage
+            # INPUT: request.qas, redacted_answers
+            # OUTPUT: qa_text = """
+            #   Question: How is your health?
+            #   Answer: Good
+            #
+            #     Question: Any conditions?
+            #     Answer: Yes, diabetes
+            # """
             qa_text = self._format_qas(request.qas, redacted_answers)
 
             # Format scores for inclusion in prompt
+            # INPUT: scores = {"health": 85.0, "body": 70.0}
+            # OUTPUT: scores_text = "Scores:\nHealth Score: 85.0\nBody Score: 70.0"
             scores_text = self._format_scores(scores)
 
             # Log the full request before sending to Bedrock
             self._log_bedrock_request(request, qa_text, context_docs, scores_text)
 
             # Use direct model call to capture token usage
+            # INPUT: request.prompt, context_docs, qa_text, scores_text
+            # OUTPUT: message = "Based on the patient responses, here are the key findings..."
+            #         token_usage = TokenUsage(input_tokens=1250, output_tokens=350, total_tokens=1600)
             message, token_usage = await self._generate_with_token_tracking(
                 request.prompt, context_docs, qa_text, scores_text
             )
@@ -101,6 +147,13 @@ class ReportGenerationService:
                     f"Token usage: input={token_usage.input_tokens}, output={token_usage.output_tokens}, total={token_usage.total_tokens}"
                 )
 
+            # FINAL OUTPUT: ReportGenerationResponse = {
+            #   "message": "Based on the patient responses...",
+            #   "references": ["doc1.pdf", "doc2.pdf"],
+            #   "document_ids": ["doc-123", "doc-456"],
+            #   "knowledge_id": "kb-123",
+            #   "token_usage": {"input_tokens": 1250, "output_tokens": 350, "total_tokens": 1600}
+            # }
             return ReportGenerationResponse(
                 message=message,
                 references=list(references),
@@ -112,6 +165,209 @@ class ReportGenerationService:
         except Exception as e:
             logger.error(f"Report generation failed: {str(e)}")
             raise
+
+    async def stream_insight_generation(
+        self, request: InsightGenerationRequest
+    ) -> AsyncGenerator[tuple[str, dict], None]:
+        """
+        Generate insights from report data and stream as events.
+
+        Flow:
+        1. Emit init event
+        2. Retrieve RAG context (if knowledge_id provided)
+        3. Emit metadata event with references, document_ids, knowledge_id
+        4. Format report data for LLM readability
+        5. Build prompt using insight templates
+        6. Stream LLM response
+        7. Emit complete/error event
+        """
+        logger.info(
+            f"Starting insight generation: knowledge_id={request.knowledge_id}, "
+            f"report_count={len(request.report)}"
+        )
+
+        yield ("insight.init", {"status": "started"})
+
+        try:
+            # Context Retrieval (only if knowledge_id provided)
+            context_docs = []
+            if request.knowledge_id:
+                questions = self._extract_insight_questions(request.report)
+                if questions:
+                    context_docs = await vector_store_service.similarity_search(
+                        knowledge_id=request.knowledge_id, queries=questions, k=4
+                    )
+                    logger.info(f"Retrieved RAG context: doc_count={len(context_docs)}")
+
+            # Extract references and document_ids from context
+            references = list(self._extract_references(context_docs))
+            document_ids = list(self._extract_document_ids(context_docs))
+
+            # Emit metadata event with references, document_ids, and knowledge_id
+            yield (
+                "insight.metadata",
+                {
+                    "references": references,
+                    "document_ids": document_ids,
+                    "knowledge_id": request.knowledge_id,
+                },
+            )
+
+            # Format report data for LLM
+            report_text = self._format_report_for_llm(request.report)
+
+            # Determine user prompt
+            # Use provided prompt or fall back to default
+            user_prompt = (
+                request.prompt.strip()
+                if request.prompt and request.prompt.strip()
+                else DEFAULT_INSIGHT_TASK
+            )
+
+            # Build final prompt using appropriate template
+            if context_docs:
+                # With RAG context
+                context_text = self._format_context(context_docs)
+                formatted_prompt = INSIGHT_WITH_CONTEXT_TEMPLATE.format(
+                    user_prompt=user_prompt,
+                    context=context_text,
+                    report_data=report_text,
+                )
+            else:
+                # Without RAG context
+                formatted_prompt = INSIGHT_NO_CONTEXT_TEMPLATE.format(
+                    user_prompt=user_prompt,
+                    report_data=report_text,
+                )
+
+            # Stream LLM response
+            messages = [HumanMessage(content=formatted_prompt)]
+            async for chunk, _ in self.llm_service.generate_stream(messages):
+                if chunk:
+                    yield ("insight.content", {"content": chunk})
+
+        except Exception as e:
+            logger.error(f"Error generating insight: {e}", exc_info=True)
+            yield ("insight.error", {"error": "Failed to generate insights"})
+            return
+
+        yield ("insight.complete", {"status": "complete"})
+
+    def format_sse_event(self, event_type: str, data: dict) -> str:
+        """
+        Format data as Server-Sent Event with JSON payload.
+
+        Args:
+            event_type: Type of the event
+            data: Dictionary data to send as JSON
+
+        Returns:
+            Formatted SSE string with JSON data
+        """
+        json_data = json.dumps(data)
+        return f"event: {event_type}\ndata: {json_data}\n\n"
+
+    def _extract_insight_questions(
+        self, report_items: List[ReportItemDetail]
+    ) -> List[str]:
+        """Extract question titles from report items for context retrieval."""
+        questions = []
+        for item in report_items:
+            for response in item.patient_response or []:
+                questions.append(response.question.title)
+        return questions
+
+    def _format_report_for_llm(self, report_items: List[ReportItemDetail]) -> str:
+        """Convert report data to human-readable text for LLM."""
+        if not report_items:
+            return "No report data provided."
+
+        lines = []
+
+        # Header from first item
+        first = report_items[0]
+        lines.append(f"# {first.questionnaire_title}")
+        lines.append(f"Completed: {first.completed_at}")
+        lines.append("")
+
+        # Format each category
+        for item in report_items:
+            lines.append(f"## {item.category.name}")
+            if item.category.scores:
+                scores_str = ", ".join(f"{s.name}: {s.value}" for s in item.category.scores)
+                lines.append(f"Scores: {scores_str}")
+            lines.append("")
+
+            # Patient Responses
+            if item.patient_response:
+                lines.append("### Patient Responses:")
+                for i, resp in enumerate(item.patient_response, 1):
+                    q = resp.question
+                    lines.append(f"{i}. {q.title}")
+                    if q.description:
+                        lines.append(f"   Description: {q.description}")
+                    lines.extend(self._format_answer_with_context(q))
+                    lines.append("")
+
+            # HCP Responses
+            if item.hcp_response:
+                lines.append("### HCP Responses:")
+                for i, resp in enumerate(item.hcp_response, 1):
+                    q = resp.question
+                    lines.append(f"{i}. {q.title}")
+                    if q.description:
+                        lines.append(f"   Description: {q.description}")
+                    lines.extend(self._format_answer_with_context(q))
+                    lines.append("")
+
+        return "\n".join(lines)
+
+    def _format_answer_with_context(self, question) -> list[str]:
+        """
+        Format the answer with full context (available options, selected answer).
+
+        Returns a list of lines to be added to the output.
+        """
+        lines = []
+
+        # Multiple choice questions
+        if question.options:
+            options_text = ", ".join(opt.title for opt in question.options)
+            lines.append(f"   Available Options: {options_text}")
+
+            if question.selected_options:
+                selected_text = ", ".join(opt.title for opt in question.selected_options)
+                lines.append(f"   Selected: {selected_text}")
+            else:
+                lines.append("   Selected: (none)")
+            return lines
+
+        # Numeric scale questions
+        if question.numeric_scale:
+            scale = question.numeric_scale
+            scale_info = f"{scale.min}-{scale.max}"
+            if scale.label1 or scale.label3:
+                scale_info += f" ({scale.label1} → {scale.label3})"
+            lines.append(f"   Scale: {scale_info}")
+
+            if question.selected_value is not None:
+                lines.append(f"   Selected: {question.selected_value}")
+            else:
+                lines.append("   Selected: (none)")
+            return lines
+
+        # Text response
+        if question.patient_text_response:
+            lines.append(f"   Response: {question.patient_text_response}")
+            return lines
+
+        # Numeric value without scale context
+        if question.selected_value is not None:
+            lines.append(f"   Answer: {question.selected_value}")
+            return lines
+
+        lines.append("   Answer: (no response)")
+        return lines
 
     async def _get_context(
         self, knowledge_id: str, qas: List[QAItem]
@@ -144,8 +400,7 @@ class ReportGenerationService:
     ) -> tuple[str, Optional[TokenUsage]]:
         """Generate report with direct model call to capture token usage."""
         try:
-            model = model_service.get_model()
-            logger.info(f"Model: {model}")
+            logger.info("Generating report with token tracking")
             # Determine effective prompt via prompts module helper
             effective_user_prompt = compute_effective_prompt(user_prompt)
             logger.info(f"User prompt (effective): {effective_user_prompt}")
@@ -172,14 +427,23 @@ class ReportGenerationService:
 
             logger.info(f"Final formatted prompt: {formatted_prompt}")
 
-            # Make direct model call to capture token usage
-            response = await model.ainvoke(formatted_prompt)
-
-            # Extract message and token usage
-            message = (
-                response.content if hasattr(response, "content") else str(response)
-            )
-            token_usage = self._extract_token_usage(response)
+            # Collect chunks and usage
+            message = ""
+            token_usage = None
+            
+            # Wrap prompt in HumanMessage as expected by LLMService
+            messages = [HumanMessage(content=formatted_prompt)]
+            
+            # Generate the full report and get token usage
+            message, usage = await self.llm_service.generate(messages)
+            
+            token_usage = None
+            if usage:
+                token_usage = TokenUsage(
+                    input_tokens=usage.get("input_tokens", 0),
+                    output_tokens=usage.get("output_tokens", 0),
+                    total_tokens=usage.get("total_tokens", 0),
+                )
 
             return message, token_usage
 
@@ -316,8 +580,10 @@ class ReportGenerationService:
 
         logger.info(f"=== END BEDROCK REQUEST LOG ===")
 
+
     def _extract_token_usage(self, response) -> Optional[TokenUsage]:
         """Extract token usage information from LangChain response."""
+        # This method is no longer used by _generate_with_token_tracking but kept if needed for other methods
         try:
             # Check if response has usage_metadata attribute (LangChain format)
             if hasattr(response, "usage_metadata") and response.usage_metadata:

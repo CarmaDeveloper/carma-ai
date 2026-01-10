@@ -28,18 +28,15 @@ class MessageModel(Base):
         PG_UUID[UUID](as_uuid=True),
         primary_key=True,
         default=uuid4,
-        index=True,
     )
     session_id = Column(
         PG_UUID(as_uuid=True),
         ForeignKey("chatbot_sessions.session_id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     message_type = Column(
         String,
         nullable=False,
-        index=True,
     )
     content = Column(Text, nullable=False)
     created_at = Column(
@@ -47,7 +44,6 @@ class MessageModel(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
         server_default=text("CURRENT_TIMESTAMP"),
-        index=True,
     )
     reaction = Column(String, nullable=True)
     input_tokens = Column(Integer, default=0, nullable=False, server_default=text("0"))
@@ -70,9 +66,7 @@ class MessageModel(Base):
             "message_type IN ('human', 'ai')",
             name="check_message_type",
         ),
-        Index("idx_chatbot_messages_session_id", "session_id"),
-        Index("idx_chatbot_messages_at", "created_at"),
-        Index("idx_chatbot_messages_created", "session_id", "created_at"),
+        Index("idx_messages_session_created", "session_id", text("created_at DESC")),
     )
 
     def __repr__(self) -> str:
