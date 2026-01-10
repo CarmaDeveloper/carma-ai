@@ -1,4 +1,4 @@
-name: Deploy CARMA AI to Amazon ECS
+name: Deploy to AWS ECS (Production)
 
 on:
   push:
