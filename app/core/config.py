@@ -56,7 +56,7 @@ class Settings(BaseSettings):
         default=0.9, env="COMPREHEND_THRESHOLD", ge=0, le=1
     )
     COMPREHEND_TYPES: list[str] = Field(
-        default=["LOCATION", "PERSON"], env="COMPREHEND_TYPES"
+        default=["USERNAME", "PASSWORD", "CREDIT_DEBIT_NUMBER", "BANK_ACCOUNT_NUMBER", "PIN"], env="COMPREHEND_TYPES"
     )
 
     # Authentication settings
