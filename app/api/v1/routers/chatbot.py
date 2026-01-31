@@ -102,15 +102,18 @@ async def stream_chatbot(
     4. If RAG enabled, retrieves relevant documents from knowledge base(s)
     5. Streams AI response as SSE events (with context-aware prompt if RAG enabled)
     6. Saves AI response to database with RAG metadata
-    7. Emits completion event with message count and document references
+    7. Emits completion event with message count
 
     **RAG (Retrieval-Augmented Generation):**
-    - `use_rag`: Enable/disable RAG (default: True)
+    - `use_rag`: Enable/disable RAG (default: False)
+    - `use_internet_search`: Enable/disable internet search (default: False)
     - `knowledge_id`: Specific knowledge base to search. If None, searches ALL knowledge bases.
     - RAG configuration (k, score_threshold, etc.) is controlled via server settings.
 
     **SSE Event Types (all data is JSON):**
-    - `chatbot.session`: `{"session_id": "...", "is_new": true/false, "message_id": "...", "message_created_at": "...", "references": ["s3://..."], "document_count": N, "knowledge_ids_searched": [...]}` (references as S3 URLs if RAG enabled)
+    - `chatbot.session`: `{"session_id": "...", "is_new": true/false, "message_id": "...", "message_created_at": "..."}`
+    - `chatbot.metadata`: `{"document_ids": [...], "document_count": N, "knowledge_ids_searched": [...], "search_results": [...]}` (if RAG/search enabled)
+    - `chatbot.references`: `{"references": [{"title": "...", "url": "https://..."}]}` (list of references with title and S3 download URL)
     - `chatbot.chunk`: `{"content": "chunk of text"}`
     - `chatbot.complete`: `{"status": "complete", "message_count": N}`
     - `chatbot.error`: `{"error": "error message", "message": "description"}`
@@ -143,8 +146,11 @@ async def stream_chatbot(
                 require_active=True,
             )
 
-        # Determine effective use_rag value (defaults to True if not specified)
-        use_rag = request.use_rag is not False
+        # Determine effective use_rag value (defaults to False if not specified)
+        use_rag = bool(request.use_rag)
+
+        # Determine effective use_internet_search value (defaults to False if not specified)
+        use_internet_search = bool(request.use_internet_search)
 
         async def event_generator():
             """Generate SSE events from the chatbot service."""
@@ -156,6 +162,7 @@ async def stream_chatbot(
                     metadata=request.metadata,
                     use_rag=use_rag,
                     knowledge_id=request.knowledge_id,
+                    use_internet_search=use_internet_search,
                 ):
                     # Format as SSE event with JSON data
                     sse_message = chatbot_service.format_sse_event(event_type, data)

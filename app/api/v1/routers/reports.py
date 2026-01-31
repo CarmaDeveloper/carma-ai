@@ -1,17 +1,18 @@
 """Report generation endpoints."""
 
 import asyncio
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from app.core.exceptions import ComprehendError, ModelError, VectorStoreError
 from app.core.logging import setup_logger
+from app.dependencies import get_report_service
 from app.schemas.report import (
     ReportGenerationRequest,
     ReportGenerationResponse,
     InsightGenerationRequest,
 )
-from app.services.report import report_service
+from app.services.report import ReportGenerationService
 
 logger = setup_logger(__name__)
 
@@ -24,7 +25,10 @@ router = APIRouter(prefix="/reports")
     status_code=status.HTTP_200_OK,
     summary="Generate a report using RAG methodology",
 )
-async def generate_report(request: ReportGenerationRequest) -> ReportGenerationResponse:
+async def generate_report(
+    request: ReportGenerationRequest,
+    report_service: ReportGenerationService = Depends(get_report_service),
+) -> ReportGenerationResponse:
     """
     Generate a report using RAG methodology.
 
@@ -94,12 +98,15 @@ async def generate_report(request: ReportGenerationRequest) -> ReportGenerationR
 )
 async def generate_insights_stream(
     request: InsightGenerationRequest,
+    report_service: ReportGenerationService = Depends(get_report_service),
 ) -> StreamingResponse:
     """
     Generate insights from patient report data and stream the response.
 
     This endpoint streams the following events:
     - `insight.init`: Initialization of the generation process.
+    - `insight.metadata`: Metadata including references (filenames), document_ids, and knowledge_id.
+    - `insight.references`: List of references with user-defined title and S3 download URL.
     - `insight.content`: Chunks of the generated content.
     - `insight.complete`: Completion of the generation.
     - `insight.error`: Error occurred.

@@ -19,12 +19,15 @@ from app.repositories import (
 from app.prompts.chatbot import (
     build_system_prompt,
     build_session_title_prompt,
+    build_search_query_prompt,
     SESSION_TITLE_MAX_LENGTH,
 )
 from app.schemas.chatbot import DocumentReference
+from app.schemas.report import ReferenceItem
 from app.services.llm import LLMService, ModelConfig
 from app.services.rag_retrieval import RAGRetrievalService
 from app.services.s3 import s3_service
+from app.services.web_search import web_search_service
 
 logger = setup_logger(__name__)
 
@@ -52,6 +55,7 @@ class ChatbotService:
         # Store repositories
         self._session_repo = session_repo
         self._message_repo = message_repo
+        self._document_record_repo = document_record_repo
 
         # Create RAG service
         self._rag_service = RAGRetrievalService(
@@ -110,6 +114,31 @@ class ChatbotService:
             if user_message
             else "New Conversation"
         )
+
+    async def _generate_search_query(self, message: str, history: List[BaseMessage]) -> str:
+        """
+        Generate a search query using LLM based on user message and history.
+        
+        Args:
+            message: User message
+            history: Conversation history
+            
+        Returns:
+            Generated search query string
+        """
+        try:
+            prompt = build_search_query_prompt(message)
+            # Use only recent history for context to avoid too much noise
+            recent_history = history[-3:] if history else []
+            messages = recent_history + [HumanMessage(content=prompt)]
+            
+            response, _ = await self.llm_service.generate(messages)
+            query = response.strip().strip("\"'")
+            logger.info(f"Generated search query: {query}")
+            return query
+        except Exception as e:
+            logger.warning(f"Failed to generate search query, using message as fallback: {e}")
+            return message
 
     async def _load_conversation_history(self, session_id: str) -> List[BaseMessage]:
         """
@@ -190,6 +219,7 @@ class ChatbotService:
         metadata: Optional[Dict[str, Any]] = None,
         use_rag: bool = True,
         knowledge_id: Optional[str] = None,
+        use_internet_search: bool = False,
     ) -> AsyncGenerator[tuple[str, dict], None]:
         """
         Stream a chat response with database-backed session management and optional RAG.
@@ -199,8 +229,9 @@ class ChatbotService:
         2. Loads conversation history from database
         3. Saves user message to database
         4. If RAG is enabled, retrieves relevant context from knowledge base(s)
-        5. Streams AI response with context-aware prompt
-        6. Saves AI response to database with RAG metadata
+        5. If Internet Search is enabled, performs a web search
+        6. Streams AI response with context-aware prompt
+        7. Saves AI response to database with RAG/Search metadata
 
         Args:
             message: The user's input message
@@ -209,12 +240,15 @@ class ChatbotService:
             metadata: Optional session metadata
             use_rag: Whether to use RAG for context retrieval (default: True)
             knowledge_id: Knowledge base ID for RAG. If None and use_rag=True, searches all knowledge bases.
+            use_internet_search: Whether to use internet search (default: False)
 
         Yields:
             Tuples of (event_type, data_dict) where:
-            - First yield: ("chatbot.session", {"session_id": "...", "is_new": bool, "message_id": "...", "message_created_at": "...", "references": [...], "document_count": N})
-            - Subsequent yields: ("chatbot.chunk", {"content": "chunk"})
-            - Final yield: ("chatbot.complete", {"status": "complete", "message_count": N})
+            - ("chatbot.session", {"session_id": "...", "is_new": bool, "message_id": "...", "message_created_at": "..."})
+            - ("chatbot.metadata", {"document_ids": [...], "document_count": N, "knowledge_ids_searched": [...], "search_results": [...]}) (if RAG/search enabled)
+            - ("chatbot.references", {"references": [{"title": "...", "url": "..."}]})
+            - ("chatbot.chunk", {"content": "chunk"}) (multiple times during streaming)
+            - ("chatbot.complete", {"status": "complete", "message_count": N})
 
         Raises:
             Exception: Any underlying model or database error
@@ -323,11 +357,33 @@ class ChatbotService:
                 # Continue without RAG context on failure
                 rag_context = None
 
+        # Web Search (if enabled)
+        search_results = []
+        formatted_search_results = ""
+        search_query = ""
+        
+        if use_internet_search:
+            try:
+                # Generate specific search query from history
+                search_query = await self._generate_search_query(message, history_messages[:-1])
+                
+                # Perform search
+                search_results = await web_search_service.search(search_query)
+                
+                # Format results
+                formatted_search_results = web_search_service.format_results(search_results)
+                
+                logger.info(f"Web search completed for '{search_query}', found {len(search_results)} results")
+                
+            except Exception as e:
+                logger.error(f"Web search failed: {e}", exc_info=True)
+                formatted_search_results = ""
+
         # Pre-generate AI message ID and timestamp for the session event
         ai_message_id = self._generate_id()
         ai_message_created_at = datetime.now().isoformat()
 
-        # Yield session information with AI response message ID, created_at, and RAG references
+        # Yield session information with AI response message ID and created_at
         session_event_data: Dict[str, Any] = {
             "session_id": session_id,
             "is_new": is_new_session,
@@ -335,33 +391,52 @@ class ChatbotService:
             "message_created_at": ai_message_created_at,
         }
 
-        # Include RAG references in session event (convert S3 URIs to HTTPS URLs, deduplicated)
-        if rag_context:
-            # Process URLs: convert S3 URIs to HTTPS URLs
-            processed_urls = []
-            for ref in rag_references:
-                if ref.source_url:
-                    https_url = s3_service.s3_uri_to_https_url(ref.source_url)
-                    processed_urls.append(https_url or ref.source_url)
+        yield ("chatbot.session", session_event_data)
 
-            # Deduplicate while preserving order
-            session_event_data["references"] = list(dict.fromkeys(processed_urls))
-            session_event_data["document_count"] = len(rag_context.documents)
-            session_event_data["knowledge_ids_searched"] = (
+        # Emit metadata event with RAG/search info (similar to insight.metadata)
+        metadata_event_data: Dict[str, Any] = {}
+
+        if rag_context:
+            metadata_event_data["document_ids"] = rag_document_ids
+            metadata_event_data["document_count"] = len(rag_context.documents)
+            metadata_event_data["knowledge_ids_searched"] = (
                 rag_context.knowledge_ids_searched
             )
 
-        yield ("chatbot.session", session_event_data)
+        # Include search info in metadata event
+        if search_results:
+            metadata_event_data["search_results"] = [
+                {"title": r.get("title"), "url": r.get("url")} for r in search_results
+            ]
 
-        # Build system prompt with optional RAG context
+        if metadata_event_data:
+            yield ("chatbot.metadata", metadata_event_data)
+
+        # Emit references event with title and URL (similar to insight.references)
+        reference_items = await self._build_reference_items(rag_references)
+        yield (
+            "chatbot.references",
+            {
+                "references": [
+                    {"title": ref.title, "url": ref.url}
+                    for ref in reference_items
+                ]
+            },
+        )
+
+        # Build system prompt with optional RAG context and search results
         context_text = rag_context.context_text if rag_context else None
-        system_prompt = build_system_prompt(context=context_text)
+        
+        system_prompt = build_system_prompt(
+            context=context_text,
+            search_results=formatted_search_results
+        )
 
         # Build messages for the model (system message + conversation history)
         messages_for_model = [SystemMessage(content=system_prompt)] + history_messages
         logger.info(
             f"Sending {len(messages_for_model)} messages to model "
-            f"(1 system + {len(history_messages)} history, RAG: {rag_context is not None})"
+            f"(1 system + {len(history_messages)} history, RAG: {rag_context is not None}, Search: {bool(search_results)})"
         )
 
         # Get model and stream response
@@ -412,8 +487,23 @@ class ChatbotService:
                     "query_count": rag_context.query_count,
                     "context_length": len(rag_context.context_text),
                 }
+                
+            # Add Search metadata if search was used
+            if use_internet_search:
+                ai_message_metadata["web_search"] = {
+                    "enabled": True,
+                    "query": search_query,
+                    "result_count": len(search_results),
+                    "sources": [{"title": r.get("title"), "url": r.get("url")} for r in search_results]
+                }
 
-            # Save AI response to database with pre-generated message ID
+            # Save AI response to database with pre-generated message ID and references
+            # Convert reference_items to list of dicts for database storage
+            references_for_db = [
+                {"title": ref.title, "url": ref.url}
+                for ref in reference_items
+            ]
+
             try:
                 await self._message_repo.create(
                     message_id=UUID(ai_message_id),
@@ -421,6 +511,7 @@ class ChatbotService:
                     message_type="ai",
                     content=full_response,
                     metadata=ai_message_metadata,
+                    references=references_for_db,
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
                     total_tokens=total_tokens,
@@ -468,6 +559,67 @@ class ChatbotService:
         """
         json_data = json.dumps(data)
         return f"event: {event_type}\ndata: {json_data}\n\n"
+
+    async def _build_reference_items(
+        self, rag_references: List[DocumentReference]
+    ) -> List[ReferenceItem]:
+        """
+        Build reference items with title and S3 download URL from RAG references.
+
+        Args:
+            rag_references: List of DocumentReference objects from RAG retrieval
+
+        Returns:
+            List of ReferenceItem with title and url
+        """
+        if not rag_references:
+            return []
+
+        reference_items = []
+        filename_to_title: Dict[Tuple[str, str], str] = {}
+
+        # Group references by knowledge_id to batch database queries
+        knowledge_refs: Dict[str, List[DocumentReference]] = {}
+        for ref in rag_references:
+            if ref.knowledge_id not in knowledge_refs:
+                knowledge_refs[ref.knowledge_id] = []
+            knowledge_refs[ref.knowledge_id].append(ref)
+
+        # Fetch file info from database for each knowledge base
+        for knowledge_id, refs in knowledge_refs.items():
+            filenames = list(set(ref.file_name for ref in refs))
+            try:
+                file_info_list = await self._document_record_repo.get_file_info_by_filenames(
+                    filenames, knowledge_id
+                )
+                for info in file_info_list:
+                    filename_to_title[(info["filename"], knowledge_id)] = info["title"]
+            except Exception as e:
+                logger.error(
+                    f"Failed to fetch file info for references in knowledge_id={knowledge_id}, "
+                    f"will use filenames as titles: {e}",
+                    exc_info=True,
+                )
+
+        # Build reference items (deduplicated by source_url)
+        seen_urls = set()
+        for ref in rag_references:
+            if not ref.source_url:
+                continue
+
+            # Convert S3 URI to HTTPS URL
+            https_url = s3_service.s3_uri_to_https_url(ref.source_url)
+            if not https_url or https_url in seen_urls:
+                continue
+
+            seen_urls.add(https_url)
+
+            # Get title from database or use filename as fallback
+            title = filename_to_title.get((ref.file_name, ref.knowledge_id)) or ref.file_name
+
+            reference_items.append(ReferenceItem(title=title, url=https_url))
+
+        return reference_items
 
     async def get_session_messages(
         self, session_id: str, page: int = 1, per_page: int = 50, order: str = "ASC"

@@ -8,6 +8,7 @@ from langchain_core.documents import Document
 
 from app.core.exceptions import ModelError
 from app.core.logging import setup_logger
+from app.repositories import DocumentRecordRepositoryProtocol
 from app.schemas.report import (
     QAItem,
     ReportGenerationRequest,
@@ -15,6 +16,7 @@ from app.schemas.report import (
     TokenUsage,
     InsightGenerationRequest,
     ReportItemDetail,
+    ReferenceItem,
 )
 from app.prompts.report import (
     RAG_PROMPT_TEMPLATE,
@@ -29,6 +31,7 @@ from app.prompts.insight import (
 )
 from app.services.comprehend import comprehend_service
 from app.services.llm import LLMService, ModelConfig
+from app.services.s3 import s3_service
 from app.services.vector_store import vector_store_service
 
 logger = setup_logger(__name__)
@@ -37,9 +40,18 @@ logger = setup_logger(__name__)
 class ReportGenerationService:
     """Service for generating reports using RAG."""
 
-    def __init__(self):
-        """Initialize the report generation service."""
+    def __init__(
+        self,
+        document_record_repo: DocumentRecordRepositoryProtocol,
+    ) -> None:
+        """
+        Initialize the report generation service.
+
+        Args:
+            document_record_repo: Document record repository for fetching file metadata
+        """
         self.llm_service = LLMService()
+        self._document_record_repo = document_record_repo
 
     async def generate_report(
         self, request: ReportGenerationRequest
@@ -176,10 +188,11 @@ class ReportGenerationService:
         1. Emit init event
         2. Retrieve RAG context (if knowledge_id provided)
         3. Emit metadata event with references, document_ids, knowledge_id
-        4. Format report data for LLM readability
-        5. Build prompt using insight templates
-        6. Stream LLM response
-        7. Emit complete/error event
+        4. Emit references event with title and S3 download URL for each reference
+        5. Format report data for LLM readability
+        6. Build prompt using insight templates
+        7. Stream LLM response
+        8. Emit complete/error event
         """
         logger.info(
             f"Starting insight generation: knowledge_id={request.knowledge_id}, "
@@ -210,6 +223,22 @@ class ReportGenerationService:
                     "references": references,
                     "document_ids": document_ids,
                     "knowledge_id": request.knowledge_id,
+                },
+            )
+
+            # Emit references event with title and S3 download URL
+            reference_items = []
+            if references and request.knowledge_id:
+                reference_items = await self._build_reference_items(
+                    references, request.knowledge_id
+                )
+            yield (
+                "insight.references",
+                {
+                    "references": [
+                        {"title": ref.title, "url": ref.url}
+                        for ref in reference_items
+                    ]
                 },
             )
 
@@ -276,6 +305,59 @@ class ReportGenerationService:
             for response in item.patient_response or []:
                 questions.append(response.question.title)
         return questions
+
+    async def _build_reference_items(
+        self, filenames: List[str], knowledge_id: str
+    ) -> List[ReferenceItem]:
+        """
+        Build reference items with title and S3 download URL.
+
+        Args:
+            filenames: List of S3 filenames
+            knowledge_id: Knowledge base identifier
+
+        Returns:
+            List of ReferenceItem with title and url
+        """
+        reference_items = []
+        filename_to_title = {}
+        try:
+            # Fetch file info (title) from database using injected repository
+            file_info_list = await self._document_record_repo.get_file_info_by_filenames(
+                filenames, knowledge_id
+            )
+
+            # Create a mapping of filename to title
+            filename_to_title = {
+                info["filename"]: info["title"] for info in file_info_list
+            }
+        except Exception as e:
+            logger.error(f"Failed to fetch file info for references, will use filenames as titles: {e}", exc_info=True)
+
+        # Build reference items
+        for filename in filenames:
+            try:
+                # Get title from database or use filename as fallback
+                title = filename_to_title.get(filename)
+                if title is None:
+                    title = filename
+
+                # Construct S3 URL and convert to HTTPS
+                s3_url = s3_service.construct_s3_url(knowledge_id, filename)
+                https_url = s3_service.s3_uri_to_https_url(s3_url)
+
+                if https_url:
+                    reference_items.append(
+                        ReferenceItem(title=title, url=https_url)
+                    )
+                else:
+                    logger.warning(
+                        f"Failed to construct URL for file: {filename}"
+                    )
+            except Exception as e:
+                logger.error(f"Failed to build reference item for file '{filename}', skipping. Error: {e}", exc_info=True)
+
+        return reference_items
 
     def _format_report_for_llm(self, report_items: List[ReportItemDetail]) -> str:
         """Convert report data to human-readable text for LLM."""
@@ -669,7 +751,3 @@ class ReportGenerationService:
         except Exception as e:
             logger.warning(f"Failed to extract token usage: {str(e)}")
             return None
-
-
-# Singleton instance
-report_service = ReportGenerationService()

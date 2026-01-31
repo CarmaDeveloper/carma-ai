@@ -44,13 +44,19 @@ class ChatbotRequest(BaseModel):
 
     # RAG configuration
     use_rag: Optional[bool] = Field(
-        default=True,
-        description="Whether to use RAG for context retrieval. Defaults to True.",
+        default=False,
+        description="Whether to use RAG for context retrieval. Defaults to False.",
     )
     knowledge_id: Optional[str] = Field(
         default=None,
         description="Knowledge base ID for RAG context retrieval. "
         "If None and use_rag is True, searches across ALL knowledge bases.",
+    )
+
+    # Web search configuration
+    use_internet_search: Optional[bool] = Field(
+        default=False,
+        description="Whether to use internet search for up-to-date information. Defaults to False.",
     )
 
 
@@ -65,6 +71,13 @@ class PaginationMetadata(BaseModel):
     has_previous: bool = Field(..., description="Whether there is a previous page")
 
 
+class MessageReferenceItem(BaseModel):
+    """Reference item with title and URL for a message."""
+
+    title: str = Field(..., description="User-defined display title for the document")
+    url: str = Field(..., description="S3 HTTPS URL to download the file")
+
+
 class MessageResponse(BaseModel):
     """Response model for a single message."""
 
@@ -75,6 +88,10 @@ class MessageResponse(BaseModel):
     created_at: str = Field(..., description="Message creation timestamp (ISO format)")
     metadata: Dict[str, Any] = Field(
         default_factory=dict, description="Message metadata"
+    )
+    references: List[MessageReferenceItem] = Field(
+        default_factory=list,
+        description="List of document references used in generating this message (for AI messages)",
     )
 
 

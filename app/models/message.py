@@ -56,6 +56,12 @@ class MessageModel(Base):
         nullable=False,
         server_default=text("'{}'::jsonb"),
     )
+    references = Column(
+        JSONB,
+        default=list,
+        nullable=False,
+        server_default=text("'[]'::jsonb"),
+    )
 
     # Relationship to session
     session = relationship("SessionModel", back_populates="messages")
@@ -86,5 +92,8 @@ class MessageModel(Base):
             "total_tokens": self.total_tokens,
             "metadata": (
                 self.message_metadata if isinstance(self.message_metadata, dict) else {}
+            ),
+            "references": (
+                self.references if isinstance(self.references, list) else []
             ),
         }

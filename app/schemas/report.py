@@ -207,3 +207,17 @@ class InsightGenerationRequest(BaseModel):
     report: List[ReportItemDetail] = Field(..., description="List of report items")
     knowledge_id: Optional[str] = Field(None, alias="knowledgeId", description="Optional knowledge base ID for context retrieval")
     prompt: Optional[str] = Field(None, description="Optional prompt for insight generation")
+
+
+class ReferenceItem(BaseModel):
+    """Reference item with title and S3 download URL."""
+    title: str = Field(..., description="User-defined display title for the document")
+    url: str = Field(..., description="S3 HTTPS URL to download the file")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "title": "Annual Health Report 2024",
+                "url": "https://bucket.s3.region.amazonaws.com/knowledge/uuid/report.pdf"
+            }
+        }

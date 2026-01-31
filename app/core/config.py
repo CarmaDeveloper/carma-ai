@@ -56,14 +56,27 @@ class Settings(BaseSettings):
     # AWS Comprehend settings
     COMPREHEND_REGION: str = Field(default="ca-central-1", env="COMPREHEND_REGION")
     COMPREHEND_THRESHOLD: float = Field(
-        default=0.9, env="COMPREHEND_THRESHOLD", ge=0, le=1
+        default=0.8, env="COMPREHEND_THRESHOLD", ge=0, le=1
     )
     COMPREHEND_TYPES: list[str] = Field(
-        default=["USERNAME", "PASSWORD", "CREDIT_DEBIT_NUMBER", "BANK_ACCOUNT_NUMBER", "PIN"], env="COMPREHEND_TYPES"
+        default=[
+            "USERNAME",
+            "PASSWORD",
+            "CREDIT_DEBIT_NUMBER",
+            "CREDIT_DEBIT_CVV",
+            "CREDIT_DEBIT_EXPIRY",
+            "PIN",
+            "BANK_ACCOUNT_NUMBER",
+        ],
+        env="COMPREHEND_TYPES",
+    )
+    COMPREHEND_MAX_CONCURRENT_REQUESTS: int = Field(
+        default=25, env="COMPREHEND_MAX_CONCURRENT_REQUESTS", ge=1, le=100
     )
 
     # Authentication settings
     AUTH_TOKEN: str = Field(default="", env="AUTH_TOKEN")
+    TAVILY_API_KEY: str = Field(default="", env="TAVILY_API_KEY")
 
     # CORS settings
     CORS_ORIGINS: list[str] = Field(default=["*"], env="CORS_ORIGINS")

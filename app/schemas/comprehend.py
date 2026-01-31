@@ -19,9 +19,9 @@ class ComprehendRequest(BaseModel):
         json_schema_extra = {
             "example": {
                 "texts": [
-                    "Hello, my name is John Smith and I live in New York.",
-                    "Contact me at john.smith@email.com or call 555-123-4567.",
-                    "My social security number is 123-45-6789.",
+                    "My username is john_doe and my password is secret123.",
+                    "Credit card number: 4532-1234-5678-9012, PIN: 1234.",
+                    "Bank account number is 123456789012.",
                 ]
             }
         }
@@ -39,9 +39,9 @@ class ComprehendResponse(BaseModel):
         json_schema_extra = {
             "example": {
                 "redacted_texts": [
-                    "Hello, my name is [REDACTED] and I live in [REDACTED].",
-                    "Contact me at [REDACTED] or call [REDACTED].",
-                    "My social security number is [REDACTED].",
+                    "My username is [REDACTED] and my password is [REDACTED].",
+                    "Credit card number: [REDACTED], PIN: [REDACTED].",
+                    "Bank account number is [REDACTED].",
                 ],
                 "processed_count": 3,
             }

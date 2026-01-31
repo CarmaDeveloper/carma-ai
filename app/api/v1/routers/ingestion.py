@@ -51,7 +51,8 @@ router = APIRouter(prefix="/ingestion")
     
     **Parameters:**
     - `knowledge_id`: Unique identifier for the knowledge base (used in S3 path)
-    - `filename`: Name of the file to process from S3
+    - `filename`: Name of the file in S3 bucket (e.g., 'report_2024.pdf')
+    - `title`: User-defined display title for the document (e.g., 'Annual Report 2024')
     """,
 )
 async def ingest_document(
@@ -136,7 +137,7 @@ async def ingest_document_async(
     try:
         logger.info(
             f"API: Starting async S3 ingestion - knowledge_id: {request.knowledge_id}, "
-            f"filename: {request.filename}"
+            f"filename: {request.filename}, title: {request.title}"
         )
 
         # Add ingestion task to background tasks
@@ -148,6 +149,7 @@ async def ingest_document_async(
                 "message": "S3 document ingestion started",
                 "knowledge_id": request.knowledge_id,
                 "filename": request.filename,
+                "title": request.title,
                 "status": "processing",
             },
         )

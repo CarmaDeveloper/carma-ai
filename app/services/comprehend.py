@@ -1,5 +1,7 @@
 """AWS Comprehend service for PII detection and redaction."""
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from typing import List
 
 import boto3
@@ -13,20 +15,7 @@ logger = setup_logger(__name__)
 
 # Constants
 LANGUAGE_CODE = "en"
-BATCH_SIZE = 25
 REPLACE_VIA = "[REDACTED]"
-
-VALID_ENTITY_TYPES = [
-    "COMMERCIAL_ITEM",
-    "DATE",
-    "EVENT",
-    "LOCATION",
-    "ORGANIZATION",
-    "OTHER",
-    "PERSON",
-    "QUANTITY",
-    "TITLE",
-]
 
 
 class ComprehendService:
@@ -37,10 +26,21 @@ class ComprehendService:
         self.client = boto3.client("comprehend", region_name=settings.COMPREHEND_REGION)
         self.threshold = settings.COMPREHEND_THRESHOLD
         self.entity_types = settings.COMPREHEND_TYPES
+        # Thread pool for running blocking boto3 calls
+        self._executor = ThreadPoolExecutor(
+            max_workers=settings.COMPREHEND_MAX_CONCURRENT_REQUESTS
+        )
+
+    def _detect_pii_sync(self, text: str) -> dict:
+        """Synchronous call to AWS Comprehend detect_pii_entities."""
+        return self.client.detect_pii_entities(Text=text, LanguageCode=LANGUAGE_CODE)
 
     async def redact_pii(self, texts: List[str]) -> List[str]:
         """
         Use AWS Comprehend to filter personal information from texts.
+
+        Processes texts concurrently using a thread pool executor to avoid
+        blocking the event loop with boto3's synchronous I/O operations.
 
         Args:
             texts: List of text strings to process
@@ -60,13 +60,9 @@ class ComprehendService:
         )
 
         try:
-            result: List[str] = []
-
-            # Process texts in batches
-            for i in range(0, len(texts), BATCH_SIZE):
-                batch_texts = texts[i : i + BATCH_SIZE]
-                redacted_batch = await self._process_batch(batch_texts, i)
-                result.extend(redacted_batch)
+            # Process all texts concurrently
+            tasks = [self._process_text(text) for text in texts]
+            result = await asyncio.gather(*tasks)
 
             logger.info(f"Completed PII redaction: processed_count={len(result)}")
             return result
@@ -75,28 +71,22 @@ class ComprehendService:
             logger.error(f"AWS Comprehend error: {str(e)}")
             raise ComprehendError(f"Comprehend service error: {str(e)}")
 
-    async def _process_batch(self, batch_texts: List[str], offset: int) -> List[str]:
-        """Process a batch of texts for PII detection."""
+    async def _process_text(self, text: str) -> str:
+        """Process a single text for PII detection and redaction."""
         try:
-            response = self.client.batch_detect_entities(
-                TextList=batch_texts, LanguageCode=LANGUAGE_CODE
+            # Skip empty texts
+            if not text or not text.strip():
+                return text
+
+            # Run blocking boto3 call in thread pool to avoid blocking event loop
+            loop = asyncio.get_running_loop()
+            response = await loop.run_in_executor(
+                self._executor, self._detect_pii_sync, text
             )
 
-            if response.get("ErrorList"):
-                error_msg = response["ErrorList"][0].get(
-                    "ErrorMessage", "Unknown error"
-                )
-                raise ComprehendError(f"Batch processing error: {error_msg}")
-
-            result = []
-            for index, result_item in enumerate(response.get("ResultList", [])):
-                original_text = batch_texts[index]
-                redacted_text = self._redact_entities(
-                    original_text, result_item.get("Entities", [])
-                )
-                result.append(redacted_text)
-
-            return result
+            entities = response.get("Entities", [])
+            redacted_text = self._redact_entities(text, entities)
+            return redacted_text
 
         except KeyError as e:
             raise ComprehendError(f"Unexpected response format: missing {e}")

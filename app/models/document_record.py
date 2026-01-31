@@ -19,6 +19,7 @@ class DocumentRecordModel(Base):
     __tablename__ = "document_records"
 
     filename = Column(Text, nullable=False)
+    title = Column(Text, nullable=True)
     knowledge_id = Column(Text, nullable=False)
     document_id = Column(Text, nullable=False)
     created_at = Column(
@@ -36,7 +37,7 @@ class DocumentRecordModel(Base):
 
     def __repr__(self) -> str:
         return (
-            f"<DocumentRecordModel(filename={self.filename}, "
+            f"<DocumentRecordModel(filename={self.filename}, title={self.title}, "
             f"knowledge_id={self.knowledge_id}, document_id={self.document_id})>"
         )
 
@@ -44,6 +45,7 @@ class DocumentRecordModel(Base):
         """Convert document record to dictionary."""
         return {
             "filename": self.filename,
+            "title": self.title,
             "knowledge_id": self.knowledge_id,
             "document_id": self.document_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,

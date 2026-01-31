@@ -67,15 +67,16 @@ class IngestionService:
             Ingestion response with processing results
         """
         try:
-            # Process request to extract knowledge_id, filename, and file_path
+            # Process request to extract knowledge_id, filename, title, and file_path
             processed_request = await self._process_ingestion_request(request)
             knowledge_id = processed_request["knowledge_id"]
             filename = processed_request["filename"]
+            title = processed_request["title"]
             file_path = processed_request["file_path"]
 
             logger.info(
                 f"Starting ingestion: knowledge_id={knowledge_id}, "
-                f"filename={filename}, file_path={file_path}"
+                f"filename={filename}, title={title}, file_path={file_path}"
             )
 
             # Step 1: Load document
@@ -106,12 +107,12 @@ class IngestionService:
 
             # Step 7: Record file metadata
             await self._document_record_repo.add_file_records(
-                filename, document_ids, knowledge_id
+                filename, document_ids, knowledge_id, title
             )
 
             logger.info(
                 f"Successfully ingested document: knowledge_id={knowledge_id}, "
-                f"filename={filename}, chunks={len(chunks)}"
+                f"filename={filename}, title={title}, chunks={len(chunks)}"
             )
 
             return IngestionResponse(
@@ -119,6 +120,7 @@ class IngestionService:
                 message="Document ingested successfully",
                 knowledge_id=knowledge_id,
                 filename=filename,
+                title=title,
                 document_count=len(chunks),
                 document_ids=document_ids,
             )
@@ -127,20 +129,12 @@ class IngestionService:
             error_msg = f"Ingestion failed: {str(e)}"
             logger.error(error_msg)
 
-            # Try to get knowledge_id and filename for error response
-            try:
-                processed_request = await self._process_ingestion_request(request)
-                knowledge_id = processed_request["knowledge_id"]
-                filename = processed_request["filename"]
-            except:
-                knowledge_id = request.knowledge_id or "unknown"
-                filename = request.filename or "unknown"
-
             return IngestionResponse(
                 success=False,
                 message=error_msg,
-                knowledge_id=knowledge_id,
-                filename=filename,
+                knowledge_id=request.knowledge_id,
+                filename=request.filename,
+                title=request.title,
                 document_count=0,
                 document_ids=[],
             )
@@ -153,7 +147,7 @@ class IngestionService:
 
         Args:
             knowledge_id: Knowledge base identifier
-            filename: Name of the file to remove
+            filename: Name of the file in S3 bucket to remove
 
         Returns:
             Document removal response
@@ -244,10 +238,10 @@ class IngestionService:
         Process ingestion request to construct S3 URL and prepare for ingestion.
 
         Args:
-            request: Ingestion request with knowledge_id and filename
+            request: Ingestion request with knowledge_id, filename (S3 file name), and title (user-defined)
 
         Returns:
-            Dict with knowledge_id, filename, and constructed S3 URL (file_path)
+            Dict with knowledge_id, filename (S3), title (user-defined), and constructed S3 URL (file_path)
         """
         # Construct S3 URL from configuration and request parameters
         s3_url = s3_service.construct_s3_url(request.knowledge_id, request.filename)
@@ -255,6 +249,7 @@ class IngestionService:
         return {
             "knowledge_id": request.knowledge_id,
             "filename": request.filename,
+            "title": request.title,
             "file_path": s3_url,
         }
 

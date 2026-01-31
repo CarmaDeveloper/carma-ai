@@ -1,6 +1,6 @@
 """Repository for DocumentRecordModel database operations with Protocol."""
 
-from typing import List, Dict, Any, Protocol
+from typing import List, Dict, Any, Protocol, Optional
 from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,7 +14,7 @@ class DocumentRecordRepositoryProtocol(Protocol):
     """Protocol for DocumentRecordRepository interface."""
 
     async def add_file_records(
-        self, filename: str, document_ids: List[str], knowledge_id: str
+        self, filename: str, document_ids: List[str], knowledge_id: str, title: str
     ) -> None: ...
 
     async def remove_file_records(
@@ -31,6 +31,10 @@ class DocumentRecordRepositoryProtocol(Protocol):
 
     async def get_all_knowledge_ids(self) -> List[str]: ...
 
+    async def get_file_info_by_filenames(
+        self, filenames: List[str], knowledge_id: str
+    ) -> List[Dict[str, Optional[str]]]: ...
+
 
 class DocumentRecordRepository:
     """Repository for DocumentRecordModel operations with injected session."""
@@ -40,15 +44,16 @@ class DocumentRecordRepository:
         self.session = session
 
     async def add_file_records(
-        self, filename: str, document_ids: List[str], knowledge_id: str
+        self, filename: str, document_ids: List[str], knowledge_id: str, title: str
     ) -> None:
         """
         Add document records for a file.
 
         Args:
-            filename: Name of the source file
+            filename: Name of the file in S3 bucket (e.g., 'report_2024.pdf')
             document_ids: List of document chunk IDs generated from the file
             knowledge_id: Knowledge base identifier
+            title: User-defined display title for the document (e.g., 'Annual Report 2024')
         """
         if not document_ids:
             logger.warning(f"No document IDs provided for file: {filename}")
@@ -66,6 +71,7 @@ class DocumentRecordRepository:
         records = [
             DocumentRecordModel(
                 filename=filename,
+                title=title,
                 knowledge_id=knowledge_id,
                 document_id=doc_id,
             )
@@ -76,7 +82,7 @@ class DocumentRecordRepository:
 
         logger.info(
             f"Added {len(document_ids)} document records for file: {filename}, "
-            f"knowledge_id: {knowledge_id}"
+            f"title: {title}, knowledge_id: {knowledge_id}"
         )
 
     async def remove_file_records(self, filename: str, knowledge_id: str) -> List[str]:
@@ -84,7 +90,7 @@ class DocumentRecordRepository:
         Remove all document records for a file.
 
         Args:
-            filename: Name of the source file
+            filename: Name of the file in S3 bucket
             knowledge_id: Knowledge base identifier
 
         Returns:
@@ -127,7 +133,7 @@ class DocumentRecordRepository:
         Get all document IDs for a specific file.
 
         Args:
-            filename: Name of the source file
+            filename: Name of the file in S3 bucket
             knowledge_id: Knowledge base identifier
 
         Returns:
@@ -146,13 +152,13 @@ class DocumentRecordRepository:
 
     async def get_knowledge_base_files(self, knowledge_id: str) -> List[str]:
         """
-        Get all filenames in a knowledge base.
+        Get all filenames (S3 file names) in a knowledge base.
 
         Args:
             knowledge_id: Knowledge base identifier
 
         Returns:
-            List of unique filenames in the knowledge base
+            List of unique S3 filenames in the knowledge base
         """
         result = await self.session.execute(
             select(DocumentRecordModel.filename)
@@ -213,3 +219,37 @@ class DocumentRecordRepository:
         knowledge_ids = list(result.scalars().all())
         logger.debug(f"Found {len(knowledge_ids)} knowledge bases")
         return knowledge_ids
+
+    async def get_file_info_by_filenames(
+        self, filenames: List[str], knowledge_id: str
+    ) -> List[Dict[str, Optional[str]]]:
+        """
+        Get file info (filename and title) for a list of filenames.
+
+        Args:
+            filenames: List of S3 filenames to look up
+            knowledge_id: Knowledge base identifier
+
+        Returns:
+            List of dicts with 'filename' and 'title' keys for each unique file
+        """
+        if not filenames:
+            return []
+
+        result = await self.session.execute(
+            select(DocumentRecordModel.filename, DocumentRecordModel.title)
+            .where(
+                DocumentRecordModel.filename.in_(filenames),
+                DocumentRecordModel.knowledge_id == knowledge_id,
+            )
+            .distinct()
+        )
+        rows = result.all()
+
+        file_info = [
+            {"filename": row.filename, "title": row.title}
+            for row in rows
+        ]
+        logger.debug(f"Found file info for {len(file_info)} files in knowledge base: {knowledge_id}")
+
+        return file_info

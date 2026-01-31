@@ -9,6 +9,7 @@ from .get_ingestion_service import (
     get_document_record_repository,
     get_ingestion_service,
 )
+from .get_report_service import get_report_service
 
 __all__ = [
     "get_session_repository",
@@ -16,4 +17,5 @@ __all__ = [
     "get_chatbot_service",
     "get_document_record_repository",
     "get_ingestion_service",
+    "get_report_service",
 ]

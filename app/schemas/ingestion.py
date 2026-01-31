@@ -9,13 +9,15 @@ class IngestionRequest(BaseModel):
     """Request model for document ingestion."""
 
     knowledge_id: str = Field(..., description="Knowledge base identifier (UUID)")
-    filename: str = Field(..., description="Name of the file to process")
+    filename: str = Field(..., description="Name of the file in S3 bucket (e.g., 'report_2024.pdf')")
+    title: str = Field(..., description="User-defined display title for the document (e.g., 'Annual Report 2024')")
 
     class Config:
         json_schema_extra = {
             "example": {
                 "knowledge_id": "a71860c9-b8df-47c5-a11f-3e1ac6086026",
                 "filename": "test.pdf",
+                "title": "Technical Specification Document",
             }
         }
 
@@ -26,7 +28,8 @@ class IngestionResponse(BaseModel):
     success: bool = Field(..., description="Whether ingestion was successful")
     message: str = Field(..., description="Status message")
     knowledge_id: str = Field(..., description="Knowledge base identifier")
-    filename: str = Field(..., description="Processed filename")
+    filename: str = Field(..., description="Name of the file in S3 bucket")
+    title: str = Field(..., description="User-defined display title for the document")
     document_count: int = Field(..., description="Number of document chunks created")
     document_ids: List[str] = Field(..., description="List of generated document IDs")
 
@@ -37,6 +40,7 @@ class IngestionResponse(BaseModel):
                 "message": "Document ingested successfully",
                 "knowledge_id": "project_docs",
                 "filename": "technical_specification.pdf",
+                "title": "Technical Specification Document",
                 "document_count": 15,
                 "document_ids": ["uuid1", "uuid2", "uuid3"],
             }
@@ -47,7 +51,7 @@ class IngestionStatusRequest(BaseModel):
     """Request model for checking ingestion status."""
 
     knowledge_id: str = Field(..., description="Knowledge base identifier")
-    filename: Optional[str] = Field(None, description="Optional filename filter")
+    filename: Optional[str] = Field(None, description="Optional S3 filename filter")
 
 
 class IngestionStatusResponse(BaseModel):
@@ -63,7 +67,7 @@ class DocumentRemovalRequest(BaseModel):
     """Request model for removing documents."""
 
     knowledge_id: str = Field(..., description="Knowledge base identifier")
-    filename: str = Field(..., description="Name of the file to remove")
+    filename: str = Field(..., description="Name of the file in S3 bucket to remove")
 
 
 class DocumentRemovalResponse(BaseModel):
@@ -72,5 +76,5 @@ class DocumentRemovalResponse(BaseModel):
     success: bool = Field(..., description="Whether removal was successful")
     message: str = Field(..., description="Status message")
     knowledge_id: str = Field(..., description="Knowledge base identifier")
-    filename: str = Field(..., description="Removed filename")
+    filename: str = Field(..., description="Name of the removed file from S3 bucket")
     removed_count: int = Field(..., description="Number of document chunks removed")
