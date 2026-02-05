@@ -13,9 +13,10 @@ from app.core.logging import setup_logger
 
 logger = setup_logger(__name__)
 
-# Security scheme for OpenAPI documentation
-# This allows Swagger UI to show the "Authorize" button and send the header
+# Security schemes for OpenAPI documentation
+# This allows Swagger UI to show the "Authorize" button and send the headers
 api_key_header = APIKeyHeader(name="Ai-Token", auto_error=False)
+user_id_header = APIKeyHeader(name="User-ID", auto_error=False)
 
 
 class AuthenticationMiddleware(BaseHTTPMiddleware):
@@ -58,29 +59,52 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
 
 
 async def get_user_id(
-    user_id: str = Header(..., alias="User-Id", description="User identifier")
+    user_id: str = Header(..., alias="User-ID", description="User identifier for tracking and observability")
 ) -> str:
     """
     FastAPI dependency to extract and validate user_id from request headers.
 
-    This dependency requires the 'User-Id' header to be present in the request.
+    This dependency requires the 'User-ID' header to be present in the request.
     It follows FastAPI best practices for extracting headers as dependencies.
 
     Args:
-        user_id: User identifier from 'User-Id' header
+        user_id: User identifier from 'User-ID' header
 
     Returns:
         str: The user ID
 
     Raises:
-        HTTPException: If User-Id header is missing or invalid
+        HTTPException: If User-ID header is missing or invalid
     """
     if not user_id or not user_id.strip():
-        logger.warning("Invalid or empty User-Id header provided")
+        logger.warning("Invalid or empty User-ID header provided")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing or invalid User-Id header",
+            detail="Missing or invalid User-ID header",
         )
 
     logger.debug(f"Extracted user_id: {user_id}")
     return user_id.strip()
+
+
+async def get_optional_user_id(
+    user_id: str = Header(None, alias="User-ID", description="Optional user identifier for tracking and observability")
+) -> str | None:
+    """
+    FastAPI dependency to optionally extract user_id from request headers.
+
+    This dependency allows the 'User-ID' header to be optional.
+    If provided, it validates and returns the user_id. If not provided, returns None.
+
+    Args:
+        user_id: Optional user identifier from 'User-ID' header
+
+    Returns:
+        str | None: The user ID if provided and valid, None otherwise
+    """
+    if user_id and user_id.strip():
+        logger.debug(f"Extracted optional user_id: {user_id}")
+        return user_id.strip()
+    
+    logger.debug("No User-ID header provided")
+    return None

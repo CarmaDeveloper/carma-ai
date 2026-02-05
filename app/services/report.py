@@ -7,6 +7,7 @@ from langchain_core.messages import HumanMessage
 from langchain_core.documents import Document
 
 from app.core.exceptions import ModelError
+from app.core.langfuse import langfuse_context
 from app.core.logging import setup_logger
 from app.repositories import DocumentRecordRepositoryProtocol
 from app.schemas.report import (
@@ -15,9 +16,9 @@ from app.schemas.report import (
     ReportGenerationResponse,
     TokenUsage,
     InsightGenerationRequest,
-    ReportItemDetail,
     ReferenceItem,
 )
+from app.schemas.letter import ReportItem
 from app.prompts.report import (
     RAG_PROMPT_TEMPLATE,
     NO_CONTEXT_PROMPT_TEMPLATE,
@@ -54,7 +55,7 @@ class ReportGenerationService:
         self._document_record_repo = document_record_repo
 
     async def generate_report(
-        self, request: ReportGenerationRequest
+        self, request: ReportGenerationRequest, user_id: Optional[str] = None
     ) -> ReportGenerationResponse:
         """
         Generate a report based on the request.
@@ -149,7 +150,7 @@ class ReportGenerationService:
             # OUTPUT: message = "Based on the patient responses, here are the key findings..."
             #         token_usage = TokenUsage(input_tokens=1250, output_tokens=350, total_tokens=1600)
             message, token_usage = await self._generate_with_token_tracking(
-                request.prompt, context_docs, qa_text, scores_text
+                request.prompt, context_docs, qa_text, scores_text, user_id=user_id
             )
 
             logger.info(f"Generated report: message_length={len(message)}")
@@ -179,7 +180,7 @@ class ReportGenerationService:
             raise
 
     async def stream_insight_generation(
-        self, request: InsightGenerationRequest
+        self, request: InsightGenerationRequest, user_id: Optional[str] = None
     ) -> AsyncGenerator[tuple[str, dict], None]:
         """
         Generate insights from report data and stream as events.
@@ -196,7 +197,7 @@ class ReportGenerationService:
         """
         logger.info(
             f"Starting insight generation: knowledge_id={request.knowledge_id}, "
-            f"report_count={len(request.report)}"
+            f"report_count={len(request.report)}, prompt_length={len(request.prompt or '')}"
         )
 
         yield ("insight.init", {"status": "started"})
@@ -242,8 +243,8 @@ class ReportGenerationService:
                 },
             )
 
-            # Format report data for LLM
-            report_text = self._format_report_for_llm(request.report)
+            # Format report data for LLM (header once from request; report items from request.report)
+            report_text = self._format_report_for_llm(request)
 
             # Determine user prompt
             # Use provided prompt or fall back to default
@@ -271,9 +272,25 @@ class ReportGenerationService:
 
             # Stream LLM response
             messages = [HumanMessage(content=formatted_prompt)]
-            async for chunk, _ in self.llm_service.generate_stream(messages):
-                if chunk:
-                    yield ("insight.content", {"content": chunk})
+
+            # Use Langfuse context for insight generation with user tracking
+            async with langfuse_context(
+                user_id=user_id,
+                trace_name="report.insight_generation",
+                tags=["insight", "rag" if context_docs else "no_rag"],
+                metadata={
+                    "knowledge_id": request.knowledge_id,
+                    "report_count": len(request.report),
+                    "context_doc_count": len(context_docs),
+                },
+            ) as langfuse_handler:
+                callbacks = [langfuse_handler] if langfuse_handler else None
+
+                async for chunk, _ in self.llm_service.generate_stream(
+                    messages, callbacks=callbacks
+                ):
+                    if chunk:
+                        yield ("insight.content", {"content": chunk})
 
         except Exception as e:
             logger.error(f"Error generating insight: {e}", exc_info=True)
@@ -297,7 +314,7 @@ class ReportGenerationService:
         return f"event: {event_type}\ndata: {json_data}\n\n"
 
     def _extract_insight_questions(
-        self, report_items: List[ReportItemDetail]
+        self, report_items: List[ReportItem]
     ) -> List[str]:
         """Extract question titles from report items for context retrieval."""
         questions = []
@@ -359,18 +376,30 @@ class ReportGenerationService:
 
         return reference_items
 
-    def _format_report_for_llm(self, report_items: List[ReportItemDetail]) -> str:
-        """Convert report data to human-readable text for LLM."""
+    def _format_report_for_llm(self, request: InsightGenerationRequest) -> str:
+        """Convert report data to human-readable text for LLM. Header once from request; then each report item."""
+        report_items = request.report
         if not report_items:
             return "No report data provided."
 
         lines = []
 
-        # Header from first item
-        first = report_items[0]
-        lines.append(f"# {first.questionnaire_title}")
-        lines.append(f"Completed: {first.completed_at}")
-        lines.append("")
+        # Header (once from top-level request)
+        if request.questionnaire_title:
+            lines.append(f"# {request.questionnaire_title}")
+        if request.patient_information:
+            pi = request.patient_information
+            if pi.full_name or pi.birth_day:
+                parts = []
+                if pi.full_name:
+                    parts.append(pi.full_name)
+                if pi.birth_day:
+                    parts.append(f"DOB: {pi.birth_day}")
+                lines.append("Patient: " + ", ".join(parts))
+        if request.completed_at:
+            lines.append(f"Completed: {request.completed_at}")
+        if lines:
+            lines.append("")
 
         # Format each category
         for item in report_items:
@@ -378,6 +407,13 @@ class ReportGenerationService:
             if item.category.scores:
                 scores_str = ", ".join(f"{s.name}: {s.value}" for s in item.category.scores)
                 lines.append(f"Scores: {scores_str}")
+            if item.hcp_notes:
+                lines.append(f"HCP Notes: {item.hcp_notes}")
+            if item.patient_note:
+                lines.append(f"Patient Note: {item.patient_note}")
+            if item.community_resources:
+                res_str = ", ".join(f"{r.title} ({r.url})" for r in item.community_resources)
+                lines.append(f"Community Resources: {res_str}")
             lines.append("")
 
             # Patient Responses
@@ -478,7 +514,7 @@ class ReportGenerationService:
             return []
 
     async def _generate_with_token_tracking(
-        self, user_prompt, context_docs, qa_text, scores_text
+        self, user_prompt, context_docs, qa_text, scores_text, user_id: Optional[str] = None
     ) -> tuple[str, Optional[TokenUsage]]:
         """Generate report with direct model call to capture token usage."""
         try:
@@ -512,12 +548,26 @@ class ReportGenerationService:
             # Collect chunks and usage
             message = ""
             token_usage = None
-            
+
             # Wrap prompt in HumanMessage as expected by LLMService
             messages = [HumanMessage(content=formatted_prompt)]
-            
-            # Generate the full report and get token usage
-            message, usage = await self.llm_service.generate(messages)
+
+            # Use Langfuse context for report generation with user tracking
+            async with langfuse_context(
+                user_id=user_id,
+                trace_name="report.generation",
+                tags=["report", "rag" if context_docs else "no_rag"],
+                metadata={
+                    "qa_count": len(qa_text.split("Question:")),
+                    "context_doc_count": len(context_docs) if context_docs else 0,
+                },
+            ) as langfuse_handler:
+                callbacks = [langfuse_handler] if langfuse_handler else None
+
+                # Generate the full report and get token usage
+                message, usage = await self.llm_service.generate(
+                    messages, callbacks=callbacks
+                )
             
             token_usage = None
             if usage:

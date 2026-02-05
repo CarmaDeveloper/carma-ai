@@ -4,6 +4,7 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
+from app.core.auth import get_optional_user_id
 from app.core.logging import setup_logger
 from app.schemas.letter import LetterGenerationRequest
 from app.services.letter import LetterService
@@ -21,6 +22,7 @@ router = APIRouter(prefix="/letters", tags=["letters"])
 )
 async def stream_letter(
     request: LetterGenerationRequest,
+    user_id: str | None = Depends(get_optional_user_id),
     letter_service: LetterService = Depends(get_letter_service),
 ) -> StreamingResponse:
     """
@@ -33,7 +35,8 @@ async def stream_letter(
     - `letter.error`: If an error occurs during generation.
 
     Args:
-        request: JSON body containing the `report` data and `instructions`.
+        request: JSON body with questionnaireTitle, patientInformation, completedAt,
+            report (array of category items), and instructions.
 
     Returns:
         StreamingResponse: SSE stream with media type `text/event-stream`.
@@ -42,7 +45,7 @@ async def stream_letter(
         async def event_generator():
             try:
                 async for event_type, data in letter_service.stream_letter_generation(
-                    request.report, request.instructions
+                    request, user_id
                 ):
                     yield letter_service.format_sse_event(event_type, data)
             except asyncio.CancelledError:

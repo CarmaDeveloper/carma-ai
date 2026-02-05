@@ -115,6 +115,14 @@ class Settings(BaseSettings):
         default=2, env="RAG_MAX_HISTORY_QUERIES", ge=0, le=5
     )  # Max number of history messages to use as search queries
 
+    # Langfuse observability settings
+    LANGFUSE_ENABLED: bool = Field(default=True, env="LANGFUSE_ENABLED")
+    LANGFUSE_SECRET_KEY: str = Field(default=None, env="LANGFUSE_SECRET_KEY")
+    LANGFUSE_PUBLIC_KEY: str = Field(default=None, env="LANGFUSE_PUBLIC_KEY")
+    LANGFUSE_BASE_URL: str = Field(
+        default="https://hipaa.cloud.langfuse.com", env="LANGFUSE_BASE_URL"
+    )
+
     # Environment
     ENVIRONMENT: str = Field(default="development", env="ENVIRONMENT")
     LOG_LEVEL: str = Field(default="DEBUG", env="LOG_LEVEL")

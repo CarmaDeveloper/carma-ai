@@ -4,6 +4,7 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
+from app.core.auth import get_optional_user_id
 from app.core.logging import setup_logger
 from app.schemas.template import TemplateGenerationRequest
 from app.services.template import TemplateService
@@ -21,6 +22,7 @@ router = APIRouter(prefix="/templates", tags=["templates"])
 )
 async def stream_template(
     request: TemplateGenerationRequest,
+    user_id: str | None = Depends(get_optional_user_id),
     template_service: TemplateService = Depends(get_template_service),
 ) -> StreamingResponse:
     """
@@ -43,7 +45,7 @@ async def stream_template(
         async def event_generator():
             try:
                 async for event_type, data in template_service.stream_template_generation(
-                    request.prompt
+                    request.prompt, user_id=user_id
                 ):
                     yield template_service.format_sse_event(event_type, data)
             except asyncio.CancelledError:

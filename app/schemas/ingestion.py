@@ -2,39 +2,32 @@
 
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class IngestionRequest(BaseModel):
     """Request model for document ingestion."""
 
-    knowledge_id: str = Field(..., description="Knowledge base identifier (UUID)")
-    filename: str = Field(..., description="Name of the file in S3 bucket (e.g., 'report_2024.pdf')")
-    title: str = Field(..., description="User-defined display title for the document (e.g., 'Annual Report 2024')")
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "knowledge_id": "a71860c9-b8df-47c5-a11f-3e1ac6086026",
                 "filename": "test.pdf",
                 "title": "Technical Specification Document",
             }
         }
+    )
+
+    knowledge_id: str = Field(..., description="Knowledge base identifier (UUID)")
+    filename: str = Field(..., description="Name of the file in S3 bucket (e.g., 'report_2024.pdf')")
+    title: str = Field(..., description="User-defined display title for the document (e.g., 'Annual Report 2024')")
 
 
 class IngestionResponse(BaseModel):
     """Response model for document ingestion."""
 
-    success: bool = Field(..., description="Whether ingestion was successful")
-    message: str = Field(..., description="Status message")
-    knowledge_id: str = Field(..., description="Knowledge base identifier")
-    filename: str = Field(..., description="Name of the file in S3 bucket")
-    title: str = Field(..., description="User-defined display title for the document")
-    document_count: int = Field(..., description="Number of document chunks created")
-    document_ids: List[str] = Field(..., description="List of generated document IDs")
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "success": True,
                 "message": "Document ingested successfully",
@@ -45,13 +38,22 @@ class IngestionResponse(BaseModel):
                 "document_ids": ["uuid1", "uuid2", "uuid3"],
             }
         }
+    )
+
+    success: bool = Field(..., description="Whether ingestion was successful")
+    message: str = Field(..., description="Status message")
+    knowledge_id: str = Field(..., description="Knowledge base identifier")
+    filename: str = Field(..., description="Name of the file in S3 bucket")
+    title: str = Field(..., description="User-defined display title for the document")
+    document_count: int = Field(..., description="Number of document chunks created")
+    document_ids: List[str] = Field(..., description="List of generated document IDs")
 
 
 class IngestionStatusRequest(BaseModel):
     """Request model for checking ingestion status."""
 
     knowledge_id: str = Field(..., description="Knowledge base identifier")
-    filename: Optional[str] = Field(None, description="Optional S3 filename filter")
+    filename: Optional[str] = Field(default=None, description="Optional S3 filename filter")
 
 
 class IngestionStatusResponse(BaseModel):

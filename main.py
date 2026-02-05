@@ -10,6 +10,7 @@ from app.api import health
 from app.api.v1.api import api_router_v1
 from app.core.auth import AuthenticationMiddleware, api_key_header
 from app.core.config import settings
+from app.core.langfuse import init_langfuse, shutdown_langfuse
 from app.core.logging import setup_logger
 from app.db.database import Base, engine
 
@@ -20,6 +21,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup
     logger = setup_logger(__name__)
     logger.info(f"Starting CARMA AI Application, version={app.version}")
+
+    # Initialize Langfuse observability
+    init_langfuse()
 
     # Initialize database tables only if configured to do so (e.g., in development).
     # In production, use Alembic migrations instead.
@@ -43,6 +47,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Shutdown
     logger.info("Shutting down CARMA AI Application")
+    shutdown_langfuse()
 
 
 def create_application() -> FastAPI:

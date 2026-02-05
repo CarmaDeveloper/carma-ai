@@ -26,6 +26,7 @@ router = APIRouter(prefix="/ingestion")
 @router.post(
     "/ingest",
     response_model=IngestionResponse,
+    response_model_exclude_none=True,
     status_code=status.HTTP_200_OK,
     summary="Ingest a document from S3 into a knowledge base",
     description="""
@@ -165,6 +166,7 @@ async def ingest_document_async(
 @router.delete(
     "/remove",
     response_model=DocumentRemovalResponse,
+    response_model_exclude_none=True,
     status_code=status.HTTP_200_OK,
     summary="Remove a document from a knowledge base",
     description="""
@@ -234,6 +236,7 @@ async def remove_document(
 @router.get(
     "/status/{knowledge_id}",
     response_model=IngestionStatusResponse,
+    response_model_exclude_none=True,
     status_code=status.HTTP_200_OK,
     summary="Get ingestion status for a knowledge base",
     description="""

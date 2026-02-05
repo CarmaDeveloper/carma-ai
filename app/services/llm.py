@@ -3,6 +3,7 @@
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 
 from langchain_aws.chat_models import ChatBedrock
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import BaseMessage
 from pydantic import BaseModel
 
@@ -85,13 +86,16 @@ class LLMService:
             raise ModelError(f"Failed to initialize Bedrock model: {str(e)}")
 
     async def generate(
-        self, messages: List[BaseMessage]
+        self,
+        messages: List[BaseMessage],
+        callbacks: Optional[List[BaseCallbackHandler]] = None,
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
         """
         Generate a complete response from LLM with token usage tracking.
 
         Args:
             messages: List of conversation messages
+            callbacks: Optional list of callback handlers (e.g., Langfuse)
 
         Returns:
             Tuple of (full_response, token_usage_dict_or_none)
@@ -99,7 +103,7 @@ class LLMService:
         full_response = ""
         token_usage = None
 
-        async for chunk, usage in self.generate_stream(messages):
+        async for chunk, usage in self.generate_stream(messages, callbacks=callbacks):
             if chunk:
                 full_response += chunk
             if usage:
@@ -108,40 +112,48 @@ class LLMService:
         return full_response, token_usage
 
     async def generate_stream(
-        self, messages: List[BaseMessage]
+        self,
+        messages: List[BaseMessage],
+        callbacks: Optional[List[BaseCallbackHandler]] = None,
     ) -> AsyncGenerator[Tuple[str, Optional[Dict[str, Any]]], None]:
         """
         Stream response from LLM with token usage tracking.
 
         Args:
             messages: List of conversation messages
+            callbacks: Optional list of callback handlers (e.g., Langfuse)
 
         Yields:
             Tuple of (chunk_content, token_usage_dict_or_none)
         """
         try:
             model = self._create_model()
-            
+
             # Variables to capture token usage
             input_tokens = 0
             output_tokens = 0
             total_tokens = 0
-            
+
+            # Build config with callbacks if provided
+            config = {}
+            if callbacks:
+                config["callbacks"] = callbacks
+
             # Stream the response
-            async for chunk in model.astream(messages):
+            async for chunk in model.astream(messages, config=config if config else None):
                 content = getattr(chunk, "content", "")
-                
+
                 # Only yield content chunks
                 if isinstance(content, str) and content:
                     yield content, None
-                
+
                 # Capture token usage from usage_metadata if available
                 usage_metadata = getattr(chunk, "usage_metadata", None)
                 if usage_metadata:
                     input_tokens = usage_metadata.get("input_tokens", 0)
                     output_tokens = usage_metadata.get("output_tokens", 0)
                     total_tokens = usage_metadata.get("total_tokens", 0)
-            
+
             # Yield final token usage
             if total_tokens > 0:
                 logger.debug(
@@ -152,7 +164,7 @@ class LLMService:
                     "output_tokens": output_tokens,
                     "total_tokens": total_tokens,
                 }
-                
+
         except Exception as e:
             logger.error(f"LLM streaming failed: {str(e)}", exc_info=True)
             raise ModelError(f"Failed to stream from LLM: {str(e)}")

@@ -10,6 +10,7 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, System
 
 from app.core.config import settings
 from app.core.exceptions import ModelError
+from app.core.langfuse import langfuse_context
 from app.core.logging import setup_logger
 from app.repositories import (
     SessionRepositoryProtocol,
@@ -71,12 +72,16 @@ class ChatbotService:
         """Generate a unique UUID."""
         return str(uuid.uuid4())
 
-    async def _generate_session_title(self, user_message: str) -> str:
+    async def _generate_session_title(
+        self, user_message: str, session_id: Optional[str] = None, user_id: Optional[str] = None
+    ) -> str:
         """
         Generate a meaningful session title using LLM based on the first user message.
 
         Args:
             user_message: The first user message in the session
+            session_id: Optional session ID for tracing
+            user_id: Optional user ID for tracking
 
         Returns:
             A meaningful title (max SESSION_TITLE_MAX_LENGTH characters)
@@ -84,19 +89,28 @@ class ChatbotService:
         try:
             prompt = build_session_title_prompt(user_message)
             messages = [HumanMessage(content=prompt)]
-            response, _ = await self.llm_service.generate(messages)
 
-            # Clean and truncate the title
-            title = response.strip().strip("\"'")
+            # Use Langfuse context for title generation with user tracking
+            async with langfuse_context(
+                user_id=user_id,
+                session_id=session_id,
+                trace_name="chatbot.title_generation",
+                tags=["chatbot", "title"],
+            ) as langfuse_handler:
+                callbacks = [langfuse_handler] if langfuse_handler else None
+                response, _ = await self.llm_service.generate(messages, callbacks=callbacks)
 
-            if title:
-                if len(title) > SESSION_TITLE_MAX_LENGTH:
-                    title = title[: SESSION_TITLE_MAX_LENGTH - 3] + "..."
+                # Clean and truncate the title
+                title = response.strip().strip("\"'")
 
-                logger.debug(f"Generated session title: {title}")
-                return title
+                if title:
+                    if len(title) > SESSION_TITLE_MAX_LENGTH:
+                        title = title[: SESSION_TITLE_MAX_LENGTH - 3] + "..."
 
-            logger.warning("LLM returned empty title, using fallback")
+                    logger.debug(f"Generated session title: {title}")
+                    return title
+
+                logger.warning("LLM returned empty title, using fallback")
 
         except ModelError as e:
             logger.warning(
@@ -262,7 +276,7 @@ class ChatbotService:
             logger.info(f"Generated new session ID: {session_id}")
 
             # Generate meaningful title using LLM
-            title = await self._generate_session_title(message)
+            title = await self._generate_session_title(message, session_id=session_id, user_id=user_id)
 
             # Create session in database
             try:
@@ -448,23 +462,37 @@ class ChatbotService:
             output_tokens = 0
             total_tokens = 0
 
-            # Stream the AI response with full conversation history
-            async for chunk, token_usage in self.llm_service.generate_stream(
-                messages_for_model
-            ):
-                # If we have content, yield it
-                if chunk:
-                    full_response += chunk
-                    yield ("chatbot.chunk", {"content": chunk})
+            # Use Langfuse context with session and user tracking
+            async with langfuse_context(
+                user_id=user_id,
+                session_id=session_id,
+                trace_name="chatbot.response",
+                tags=["chatbot", "rag" if use_rag else "no_rag"],
+                metadata={
+                    "knowledge_id": knowledge_id,
+                    "message_count": len(history_messages),
+                    "rag_enabled": use_rag,
+                },
+            ) as langfuse_handler:
+                callbacks = [langfuse_handler] if langfuse_handler else None
 
-                # If we have token usage (usually in final chunk), capture it
-                if token_usage:
-                    input_tokens = token_usage.get("input_tokens", 0)
-                    output_tokens = token_usage.get("output_tokens", 0)
-                    total_tokens = token_usage.get("total_tokens", 0)
-                    logger.info(
-                        f"Token usage - Input: {input_tokens}, Output: {output_tokens}, Total: {total_tokens}"
-                    )
+                # Stream the AI response with full conversation history
+                async for chunk, token_usage in self.llm_service.generate_stream(
+                    messages_for_model, callbacks=callbacks
+                ):
+                    # If we have content, yield it
+                    if chunk:
+                        full_response += chunk
+                        yield ("chatbot.chunk", {"content": chunk})
+
+                    # If we have token usage (usually in final chunk), capture it
+                    if token_usage:
+                        input_tokens = token_usage.get("input_tokens", 0)
+                        output_tokens = token_usage.get("output_tokens", 0)
+                        total_tokens = token_usage.get("total_tokens", 0)
+                        logger.info(
+                            f"Token usage - Input: {input_tokens}, Output: {output_tokens}, Total: {total_tokens}"
+                        )
 
             # Since we're using the new service, we don't have direct access to the model instance anymore
             # to get the model_id unless we check configuration. For now we'll use the one from config.

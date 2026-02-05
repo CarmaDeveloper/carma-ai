@@ -4,6 +4,7 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
+from app.core.auth import get_optional_user_id
 from app.core.exceptions import ComprehendError, ModelError, VectorStoreError
 from app.core.logging import setup_logger
 from app.dependencies import get_report_service
@@ -27,6 +28,7 @@ router = APIRouter(prefix="/reports")
 )
 async def generate_report(
     request: ReportGenerationRequest,
+    user_id: str | None = Depends(get_optional_user_id),
     report_service: ReportGenerationService = Depends(get_report_service),
 ) -> ReportGenerationResponse:
     """
@@ -54,7 +56,7 @@ async def generate_report(
             f"qa_count: {len(request.qas)}, prompt_length: {len(request.prompt)}"
         )
 
-        response = await report_service.generate_report(request)
+        response = await report_service.generate_report(request, user_id=user_id)
 
         logger.info(
             f"API: Report generated successfully - knowledge_id: {request.knowledge_id}, "
@@ -98,6 +100,7 @@ async def generate_report(
 )
 async def generate_insights_stream(
     request: InsightGenerationRequest,
+    user_id: str | None = Depends(get_optional_user_id),
     report_service: ReportGenerationService = Depends(get_report_service),
 ) -> StreamingResponse:
     """
@@ -112,7 +115,8 @@ async def generate_insights_stream(
     - `insight.error`: Error occurred.
 
     Args:
-        request: JSON body containing the list of report items.
+        request: JSON body with questionnaireTitle, patientInformation, completedAt,
+            report (array of category items), knowledgeId (optional, for RAG), and prompt.
 
     Returns:
         StreamingResponse: SSE stream.
@@ -121,7 +125,7 @@ async def generate_insights_stream(
         async def event_generator():
             try:
                 async for event_type, data in report_service.stream_insight_generation(
-                    request
+                    request, user_id=user_id
                 ):
                     yield report_service.format_sse_event(event_type, data)
             except asyncio.CancelledError:

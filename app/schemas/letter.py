@@ -1,5 +1,14 @@
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
+
+
+class PatientInformation(BaseModel):
+    """Patient info at top level: birthDay and fullName (omitempty)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    birth_day: Optional[str] = Field(default=None, alias="birthDay")
+    full_name: Optional[str] = Field(default=None, alias="fullName")
 
 
 class Score(BaseModel):
@@ -8,15 +17,13 @@ class Score(BaseModel):
 
 
 class Category(BaseModel):
-    id: Optional[str] = None
     name: str
     scores: Optional[List[Score]] = Field(default=None)
 
 
-
 class Option(BaseModel):
     title: str
-    description: Optional[str] = ""
+    description: Optional[str] = None
 
 
 class NumericScale(BaseModel):
@@ -29,6 +36,8 @@ class NumericScale(BaseModel):
 
 
 class Question(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     title: str
     description: Optional[str] = Field(default=None)
     type: str
@@ -38,66 +47,85 @@ class Question(BaseModel):
     numeric_scale: Optional[NumericScale] = Field(default=None, alias="numericScale")
     selected_value: Optional[int] = Field(default=None, alias="selectedValue")
 
-    class Config:
-        populate_by_name = True
-
 
 class ResponseItem(BaseModel):
     question: Question
 
 
-class ReportItem(BaseModel):
-    questionnaire_title: str = Field(alias="questionnaireTitle")
-    report_id: Optional[str] = Field(default=None, alias="reportId")
-    category: Category
-    patient_response: List[ResponseItem] = Field(default_factory=list, alias="patientResponse")
-    hcp_response: List[ResponseItem] = Field(default_factory=list, alias="hcpResponse")
-    hcp_notes: Optional[str] = Field(default="", alias="hcpNotes")
-    completed_at: Optional[str] = Field(default=None, alias="completedAt")
+class CommunityResource(BaseModel):
+    """Community resource with title and url (no id per spec)."""
 
-    class Config:
-        populate_by_name = True
+    title: str
+    url: str
+
+
+class ReportItem(BaseModel):
+    """Single report item: one category with responses and notes."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    category: Category
+    patient_response: Optional[List[ResponseItem]] = Field(default=None, alias="patientResponse")
+    hcp_response: Optional[List[ResponseItem]] = Field(default=None, alias="hcpResponse")
+    hcp_notes: Optional[str] = Field(default=None, alias="hcpNotes")
+    patient_note: Optional[str] = Field(default=None, alias="patientNote")
+    community_resources: Optional[List[CommunityResource]] = Field(
+        default=None, alias="communityResources"
+    )
 
 
 class LetterGenerationRequest(BaseModel):
-    """Request model for letter generation."""
-    report: List[ReportItem]
-    instructions: str = Field(..., min_length=1, description="Instructions for generating the letter")
+    """
+    Request body for POST /letters/stream.
+    Top-level: questionnaireTitle, patientInformation, completedAt (once), report, instructions.
+    """
 
-    class Config:
-        populate_by_name = True
-        json_schema_extra = {
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={
             "example": {
+                "questionnaireTitle": "Complete Health Assessment",
+                "patientInformation": {
+                    "birthDay": "2000-05-15",
+                    "fullName": "John Doe"
+                },
+                "completedAt": "2026-01-28T08:56:19Z",
                 "report": [
                     {
-                        "questionnaireTitle": "FINAL QUESTIONNAIRE!!!!",
-                        "reportId": "251484dc-adb6-4eae-8db9-16410ff8bbf0",
                         "category": {
-                            "id": "f79a53c6-af5b-4cab-ae04-550aa34e00b7",
-                            "name": "One",
+                            "name": "Kidney",
                             "scores": [
-                                {"name": "Score 1", "value": "20"},
-                                {"name": "Score 2", "value": "20"},
-                                {"name": "Score 3", "value": "1000"},
-                                {"name": "Total Category 1 Sum", "value": "10"}
+                                {"name": "Score Name", "value": "57"}
                             ]
                         },
                         "patientResponse": [
                             {
                                 "question": {
-                                    "title": "q2",
-                                    "description": "",
+                                    "title": "Question text",
                                     "type": "MultiSelectText",
-                                    "options": [{"title": "Option 1", "description": ""}, {"title": "Option 2", "description": ""}],
-                                    "selectedOptions": [{"title": "Option 1", "description": ""}]
+                                    "selectedOptions": [{"title": "Option 1", "description": None}]
                                 }
                             }
                         ],
-                        "hcpResponse": [],
-                        "hcpNotes": "this is doctore note",
-                        "completedAt": "2025-09-19T10:53:15+03:30"
+                        "hcpResponse": None,
+                        "hcpNotes": "Doctor note here",
+                        "patientNote": "Patient note",
+                        "communityResources": [
+                            {"title": "Resource Title", "url": "https://example.com"}
+                        ]
                     }
                 ],
-                "instructions": "Write a referral letter based on this report."
+                "instructions": "Write a summary letter for the patient."
             }
         }
+    )
+
+    questionnaire_title: Optional[str] = Field(default=None, alias="questionnaireTitle")
+    patient_information: Optional[PatientInformation] = Field(
+        default=None, alias="patientInformation"
+    )
+    completed_at: Optional[str] = Field(default=None, alias="completedAt")
+    report: List[ReportItem] = Field(..., description="Array of report items by category")
+    instructions: str = Field(
+        ..., min_length=1, description="User instructions for generating the letter"
+    )

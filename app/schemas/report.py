@@ -4,6 +4,8 @@ from typing import Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field, validator
 
+from app.schemas.letter import PatientInformation, ReportItem
+
 
 class QAItem(BaseModel):
     """Question and answer pair with optional hierarchical sub-questions."""
@@ -149,64 +151,54 @@ class ReportGenerationResponse(BaseModel):
         }
 
 
-# Models for Insight Generation
-
-class OptionDetail(BaseModel):
-    title: str = Field(..., alias="title")
-    description: Optional[str] = Field(None, alias="description")
-
-
-class NumericScaleDetail(BaseModel):
-    min: int = Field(..., alias="min")
-    max: int = Field(..., alias="max")
-    step: int = Field(..., alias="step")
-    label1: str = Field(..., alias="label1")
-    label2: str = Field(..., alias="label2")
-    label3: str = Field(..., alias="label3")
-
-
-class QuestionDetail(BaseModel):
-    """Question detail with response."""
-    title: str = Field(..., alias="title")
-    description: Optional[str] = Field(None, alias="description")
-    type: str = Field(..., alias="type")
-    options: Optional[List[OptionDetail]] = Field(None, alias="options")
-    selected_options: Optional[List[OptionDetail]] = Field(None, alias="selectedOptions")
-    patient_text_response: Optional[str] = Field(None, alias="patientTextResponse")
-    numeric_scale: Optional[NumericScaleDetail] = Field(None, alias="numericScale")
-    selected_value: Optional[int] = Field(None, alias="selectedValue")
-
-
-class QuestionResponseDetail(BaseModel):
-    question: QuestionDetail = Field(..., alias="question")
-
-
-class CategoryScoreDetail(BaseModel):
-    name: str = Field(..., alias="name")
-    value: str = Field(..., alias="value")
-
-
-class CategoryDetail(BaseModel):
-    id: str = Field(..., alias="id")
-    name: str = Field(..., alias="name")
-    scores: Optional[List[CategoryScoreDetail]] = Field(None, alias="scores")
-
-
-
-class ReportItemDetail(BaseModel):
-    questionnaire_title: str = Field(..., alias="questionnaireTitle")
-    report_id: str = Field(..., alias="reportId")
-    category: CategoryDetail = Field(..., alias="category")
-    patient_response: Optional[List[QuestionResponseDetail]] = Field(None, alias="patientResponse")
-    hcp_response: Optional[List[QuestionResponseDetail]] = Field(None, alias="hcpResponse")
-    completed_at: str = Field(..., alias="completedAt")
+# Models for Insight Generation (same report structure as Letter; reuse letter schemas)
 
 
 class InsightGenerationRequest(BaseModel):
-    """Request model for insight generation."""
-    report: List[ReportItemDetail] = Field(..., description="List of report items")
-    knowledge_id: Optional[str] = Field(None, alias="knowledgeId", description="Optional knowledge base ID for context retrieval")
-    prompt: Optional[str] = Field(None, description="Optional prompt for insight generation")
+    """
+    Request body for POST /reports/insights/stream.
+    Top-level: questionnaireTitle, patientInformation, completedAt (once), report, knowledgeId, prompt.
+    Report item structure matches Letter Generation (category, patientResponse, hcpResponse, hcpNotes, patientNote, communityResources).
+    """
+
+    questionnaire_title: Optional[str] = Field(default=None, alias="questionnaireTitle")
+    patient_information: Optional[PatientInformation] = Field(
+        default=None, alias="patientInformation"
+    )
+    completed_at: Optional[str] = Field(default=None, alias="completedAt")
+    report: List[ReportItem] = Field(
+        ..., description="Array of report items by category (same structure as Letter)"
+    )
+    knowledge_id: Optional[str] = Field(
+        default=None,
+        alias="knowledgeId",
+        description="Optional knowledge base ID for RAG context retrieval",
+    )
+    prompt: Optional[str] = Field(
+        default=None,
+        description="Fixed or guide prompt for generating insights (e.g. 'Generate comprehensive insights based on all patient and HCP responses')",
+    )
+
+    class Config:
+        populate_by_name = True
+        json_schema_extra = {
+            "example": {
+                "questionnaireTitle": "Complete Health Assessment",
+                "patientInformation": {"birthDay": "2000-05-15", "fullName": "John Doe"},
+                "completedAt": "2026-01-28T08:56:19Z",
+                "report": [
+                    {
+                        "category": {"name": "Kidney", "scores": [{"name": "Score Name", "value": "57"}]},
+                        "patientResponse": [],
+                        "hcpResponse": [],
+                        "hcpNotes": "Clinical note",
+                        "communityResources": [{"title": "Resource", "url": "https://example.com"}],
+                    }
+                ],
+                "knowledgeId": "kb-123",
+                "prompt": "Generate comprehensive insights based on all patient and HCP responses.",
+            }
+        }
 
 
 class ReferenceItem(BaseModel):
