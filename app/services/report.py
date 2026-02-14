@@ -237,8 +237,7 @@ class ReportGenerationService:
                 "insight.references",
                 {
                     "references": [
-                        {"title": ref.title, "url": ref.url}
-                        for ref in reference_items
+                        {"title": ref.title, "url": ref.url} for ref in reference_items
                     ]
                 },
             )
@@ -313,9 +312,7 @@ class ReportGenerationService:
         json_data = json.dumps(data)
         return f"event: {event_type}\ndata: {json_data}\n\n"
 
-    def _extract_insight_questions(
-        self, report_items: List[ReportItem]
-    ) -> List[str]:
+    def _extract_insight_questions(self, report_items: List[ReportItem]) -> List[str]:
         """Extract question titles from report items for context retrieval."""
         questions = []
         for item in report_items:
@@ -338,41 +335,57 @@ class ReportGenerationService:
         """
         reference_items = []
         filename_to_title = {}
+        filename_to_sub_refs: dict[str, list[dict]] = {}
         try:
-            # Fetch file info (title) from database using injected repository
-            file_info_list = await self._document_record_repo.get_file_info_by_filenames(
-                filenames, knowledge_id
+            # Fetch file info (title, sub_references) from database
+            file_info_list = (
+                await self._document_record_repo.get_file_info_by_filenames(
+                    filenames, knowledge_id
+                )
             )
 
-            # Create a mapping of filename to title
-            filename_to_title = {
-                info["filename"]: info["title"] for info in file_info_list
-            }
+            # Create mappings of filename to title and sub_references
+            for info in file_info_list:
+                filename_to_title[info["filename"]] = info["title"]
+                filename_to_sub_refs[info["filename"]] = info.get("sub_references", [])
         except Exception as e:
-            logger.error(f"Failed to fetch file info for references, will use filenames as titles: {e}", exc_info=True)
+            logger.error(
+                f"Failed to fetch file info for references, will use filenames as titles: {e}",
+                exc_info=True,
+            )
 
         # Build reference items
         for filename in filenames:
             try:
-                # Get title from database or use filename as fallback
-                title = filename_to_title.get(filename)
-                if title is None:
-                    title = filename
+                sub_refs = filename_to_sub_refs.get(filename, [])
 
-                # Construct S3 URL and convert to HTTPS
-                s3_url = s3_service.construct_s3_url(knowledge_id, filename)
-                https_url = s3_service.s3_uri_to_https_url(s3_url)
-
-                if https_url:
-                    reference_items.append(
-                        ReferenceItem(title=title, url=https_url)
-                    )
+                # If sub_references exist, return those instead of document-level reference
+                if sub_refs:
+                    for sub_ref in sub_refs:
+                        reference_items.append(
+                            ReferenceItem(title=sub_ref["title"], url=sub_ref["link"])
+                        )
                 else:
-                    logger.warning(
-                        f"Failed to construct URL for file: {filename}"
-                    )
+                    # No sub_references — return document-level reference
+                    title = filename_to_title.get(filename)
+                    if title is None:
+                        title = filename
+
+                    # Construct S3 URL and convert to HTTPS
+                    s3_url = s3_service.construct_s3_url(knowledge_id, filename)
+                    https_url = s3_service.s3_uri_to_https_url(s3_url)
+
+                    if https_url:
+                        reference_items.append(
+                            ReferenceItem(title=title, url=https_url)
+                        )
+                    else:
+                        logger.warning(f"Failed to construct URL for file: {filename}")
             except Exception as e:
-                logger.error(f"Failed to build reference item for file '{filename}', skipping. Error: {e}", exc_info=True)
+                logger.error(
+                    f"Failed to build reference item for file '{filename}', skipping. Error: {e}",
+                    exc_info=True,
+                )
 
         return reference_items
 
@@ -405,14 +418,18 @@ class ReportGenerationService:
         for item in report_items:
             lines.append(f"## {item.category.name}")
             if item.category.scores:
-                scores_str = ", ".join(f"{s.name}: {s.value}" for s in item.category.scores)
+                scores_str = ", ".join(
+                    f"{s.name}: {s.value}" for s in item.category.scores
+                )
                 lines.append(f"Scores: {scores_str}")
             if item.hcp_notes:
                 lines.append(f"HCP Notes: {item.hcp_notes}")
             if item.patient_note:
                 lines.append(f"Patient Note: {item.patient_note}")
             if item.community_resources:
-                res_str = ", ".join(f"{r.title} ({r.url})" for r in item.community_resources)
+                res_str = ", ".join(
+                    f"{r.title} ({r.url})" for r in item.community_resources
+                )
                 lines.append(f"Community Resources: {res_str}")
             lines.append("")
 
@@ -454,7 +471,9 @@ class ReportGenerationService:
             lines.append(f"   Available Options: {options_text}")
 
             if question.selected_options:
-                selected_text = ", ".join(opt.title for opt in question.selected_options)
+                selected_text = ", ".join(
+                    opt.title for opt in question.selected_options
+                )
                 lines.append(f"   Selected: {selected_text}")
             else:
                 lines.append("   Selected: (none)")
@@ -514,7 +533,12 @@ class ReportGenerationService:
             return []
 
     async def _generate_with_token_tracking(
-        self, user_prompt, context_docs, qa_text, scores_text, user_id: Optional[str] = None
+        self,
+        user_prompt,
+        context_docs,
+        qa_text,
+        scores_text,
+        user_id: Optional[str] = None,
     ) -> tuple[str, Optional[TokenUsage]]:
         """Generate report with direct model call to capture token usage."""
         try:
@@ -568,7 +592,7 @@ class ReportGenerationService:
                 message, usage = await self.llm_service.generate(
                     messages, callbacks=callbacks
                 )
-            
+
             token_usage = None
             if usage:
                 token_usage = TokenUsage(
@@ -711,7 +735,6 @@ class ReportGenerationService:
             logger.info(f"    Content: {doc.page_content[:300]}...")
 
         logger.info(f"=== END BEDROCK REQUEST LOG ===")
-
 
     def _extract_token_usage(self, response) -> Optional[TokenUsage]:
         """Extract token usage information from LangChain response."""

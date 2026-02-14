@@ -60,6 +60,10 @@ class IngestionService:
         """
         Main ingestion pipeline for processing a document.
 
+        If the document (same knowledge_id + filename) already exists, only the
+        title and sub_references are updated — the document is not re-processed.
+        If the document is new, the full ingestion pipeline runs.
+
         Args:
             request: Ingestion request containing file information
 
@@ -67,11 +71,49 @@ class IngestionService:
             Ingestion response with processing results
         """
         try:
-            # Process request to extract knowledge_id, filename, title, and file_path
+            knowledge_id = request.knowledge_id
+            filename = request.filename
+            title = request.title
+
+            # Convert sub_references to list of dicts for DB storage
+            sub_refs_dicts = (
+                [ref.model_dump() for ref in request.sub_references]
+                if request.sub_references
+                else []
+            )
+
+            # Check if document already exists — if so, only update metadata
+            if await self._document_record_repo.file_exists(filename, knowledge_id):
+                logger.info(
+                    f"Document already exists, updating metadata only: "
+                    f"knowledge_id={knowledge_id}, filename={filename}"
+                )
+
+                await self._document_record_repo.update_document_metadata(
+                    knowledge_id=knowledge_id,
+                    filename=filename,
+                    title=title,
+                    sub_references=sub_refs_dicts,
+                )
+
+                # Get existing document IDs for the response
+                document_ids = await self._document_record_repo.get_file_document_ids(
+                    filename, knowledge_id
+                )
+
+                return IngestionResponse(
+                    success=True,
+                    message="Document metadata updated successfully",
+                    knowledge_id=knowledge_id,
+                    filename=filename,
+                    title=title,
+                    sub_references=request.sub_references or [],
+                    document_count=len(document_ids),
+                    document_ids=document_ids,
+                )
+
+            # New document — run full ingestion pipeline
             processed_request = await self._process_ingestion_request(request)
-            knowledge_id = processed_request["knowledge_id"]
-            filename = processed_request["filename"]
-            title = processed_request["title"]
             file_path = processed_request["file_path"]
 
             logger.info(
@@ -107,7 +149,7 @@ class IngestionService:
 
             # Step 7: Record file metadata
             await self._document_record_repo.add_file_records(
-                filename, document_ids, knowledge_id, title
+                filename, document_ids, knowledge_id, title, sub_refs_dicts
             )
 
             logger.info(
@@ -121,6 +163,7 @@ class IngestionService:
                 knowledge_id=knowledge_id,
                 filename=filename,
                 title=title,
+                sub_references=request.sub_references or [],
                 document_count=len(chunks),
                 document_ids=document_ids,
             )
@@ -135,6 +178,7 @@ class IngestionService:
                 knowledge_id=request.knowledge_id,
                 filename=request.filename,
                 title=request.title,
+                sub_references=(request.sub_references or []),
                 document_count=0,
                 document_ids=[],
             )

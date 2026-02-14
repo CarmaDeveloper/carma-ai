@@ -1,7 +1,7 @@
 """SQLAlchemy ORM models for document records."""
 
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Dict, Any, List
 from sqlalchemy import (
     Column,
     Text,
@@ -10,6 +10,7 @@ from sqlalchemy import (
     text,
     PrimaryKeyConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from app.db.database import Base
 
 
@@ -22,6 +23,12 @@ class DocumentRecordModel(Base):
     title = Column(Text, nullable=True)
     knowledge_id = Column(Text, nullable=False)
     document_id = Column(Text, nullable=False)
+    sub_references = Column(
+        JSONB,
+        nullable=True,
+        server_default=text("'[]'::jsonb"),
+        default=list,
+    )
     created_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -48,5 +55,6 @@ class DocumentRecordModel(Base):
             "title": self.title,
             "knowledge_id": self.knowledge_id,
             "document_id": self.document_id,
+            "sub_references": self.sub_references or [],
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

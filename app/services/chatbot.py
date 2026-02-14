@@ -605,6 +605,7 @@ class ChatbotService:
 
         reference_items = []
         filename_to_title: Dict[Tuple[str, str], str] = {}
+        filename_to_sub_refs: Dict[Tuple[str, str], list] = {}
 
         # Group references by knowledge_id to batch database queries
         knowledge_refs: Dict[str, List[DocumentReference]] = {}
@@ -621,7 +622,9 @@ class ChatbotService:
                     filenames, knowledge_id
                 )
                 for info in file_info_list:
-                    filename_to_title[(info["filename"], knowledge_id)] = info["title"]
+                    key = (info["filename"], knowledge_id)
+                    filename_to_title[key] = info["title"]
+                    filename_to_sub_refs[key] = info.get("sub_references", [])
             except Exception as e:
                 logger.error(
                     f"Failed to fetch file info for references in knowledge_id={knowledge_id}, "
@@ -629,23 +632,34 @@ class ChatbotService:
                     exc_info=True,
                 )
 
-        # Build reference items (deduplicated by source_url)
+        # Build reference items (deduplicated by source_url / sub-ref link)
         seen_urls = set()
         for ref in rag_references:
             if not ref.source_url:
                 continue
 
-            # Convert S3 URI to HTTPS URL
-            https_url = s3_service.s3_uri_to_https_url(ref.source_url)
-            if not https_url or https_url in seen_urls:
-                continue
+            key = (ref.file_name, ref.knowledge_id)
+            sub_refs = filename_to_sub_refs.get(key, [])
 
-            seen_urls.add(https_url)
+            # If sub_references exist, return those instead of document-level reference
+            if sub_refs:
+                for sub_ref in sub_refs:
+                    link = sub_ref["link"]
+                    if link in seen_urls:
+                        continue
+                    seen_urls.add(link)
+                    reference_items.append(
+                        ReferenceItem(title=sub_ref["title"], url=link)
+                    )
+            else:
+                # No sub_references — return document-level reference
+                https_url = s3_service.s3_uri_to_https_url(ref.source_url)
+                if not https_url or https_url in seen_urls:
+                    continue
+                seen_urls.add(https_url)
 
-            # Get title from database or use filename as fallback
-            title = filename_to_title.get((ref.file_name, ref.knowledge_id)) or ref.file_name
-
-            reference_items.append(ReferenceItem(title=title, url=https_url))
+                title = filename_to_title.get(key) or ref.file_name
+                reference_items.append(ReferenceItem(title=title, url=https_url))
 
         return reference_items
 
