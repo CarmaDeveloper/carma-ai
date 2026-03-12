@@ -55,6 +55,11 @@ Do NOT summarize, restate, or paraphrase the data. Assume the reader already has
 
 ---
 
+## Language
+Always respond in English, regardless of the language used in the input data.
+
+---
+
 Please provide your clinical insights below (Markdown headings and bullet points recommended):
 """
 
@@ -92,6 +97,11 @@ Do NOT summarize, restate, or paraphrase the data. Assume the reader already has
 4. **Professional Tone**
    - Maintain formal, clinical objectivity.
    - Avoid generalizations, filler commentary, or speculation.
+
+---
+
+## Language
+Always respond in English, regardless of the language used in the input data.
 
 ---
 

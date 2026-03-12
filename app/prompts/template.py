@@ -11,7 +11,8 @@ TEMPLATE_TITLE_SYSTEM_PROMPT = (
     "- Use formal, clinician-facing language.\n"
     "- Focus on document type only (e.g., 'Referral Letter', 'Consult Note', 'Follow-Up Letter').\n"
     "- Do NOT imply sections, diagnoses, or clinical context not stated by the user.\n"
-    "- Respond with ONLY the title text.\n"
+    "- Respond with ONLY the title text in English.\n"
+    "- Always respond in English, regardless of the language of the user's input.\n"
 )
 
 # System prompt for generating the content of the template
@@ -73,4 +74,5 @@ TEMPLATE_CONTENT_SYSTEM_PROMPT = (
     "- No introduction, no explanation, no closing remarks.\n"
     "- No markdown formatting.\n"
     "- Start directly with the first section header.\n"
+    "- Always write in English, regardless of the language of the user's input.\n"
 )

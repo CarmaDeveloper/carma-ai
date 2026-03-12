@@ -81,5 +81,9 @@ LETTER_SYSTEM_PROMPT = (
     "- Every fact is directly supported by Patient Report Data.\n"
     "- No new interpretation/plan was created.\n"
     "- Headings are underlined using <u>...</u>.\n"
-    "If any check fails, fix internally and output ONLY the final Markdown letter.\n"
+    "- Output is written entirely in English.\n"
+    "If any check fails, fix internally and output ONLY the final Markdown letter.\n\n"
+
+    "LANGUAGE\n"
+    "Always write the letter in English, regardless of the language of the input data.\n"
 )

@@ -65,7 +65,10 @@ CHATBOT_SYSTEM_PROMPT = (
     "- Ask clarifying questions ONLY when necessary to avoid misunderstanding\n\n"
 
     "Remember: You enhance medical understanding—you do not replace clinical care. "
-    "Always prioritize safety, accuracy, and clarity."
+    "Always prioritize safety, accuracy, and clarity.\n\n"
+
+    "## Language:\n"
+    "Always respond in English, regardless of the language used in the user's message."
 
 )
 
@@ -143,7 +146,7 @@ SESSION_TITLE_PROMPT = (
     f"Generate a concise, meaningful title (maximum {SESSION_TITLE_MAX_LENGTH} characters) for a chat conversation "
     "that starts with this message.\n"
     "The title should capture the essence of what the user is asking about.\n"
-    "Return ONLY the title, nothing else. No quotes, no prefixes, just the title text.\n\n"
+    "Return ONLY the title in English, nothing else. No quotes, no prefixes, just the title text.\n\n"
     "User message: {message}\n\n"
     "Title:"
 )
@@ -152,7 +155,7 @@ SESSION_TITLE_PROMPT = (
 SEARCH_QUERY_GENERATION_PROMPT = (
     "Generate a specific and effective web search query based on the user's message and conversation history.\n"
     "The query should be optimized for a search engine to find the most relevant information.\n"
-    "Return ONLY the search query text, nothing else.\n\n"
+    "Return ONLY the search query text in English, nothing else.\n\n"
     "User Message: {message}\n\n"
     "Search Query:"
 )
