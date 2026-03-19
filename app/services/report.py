@@ -318,6 +318,8 @@ class ReportGenerationService:
         for item in report_items:
             for response in item.patient_response or []:
                 questions.append(response.question.title)
+            for response in item.hcp_response or []:
+                questions.append(response.question.title)
         return questions
 
     async def _build_reference_items(
