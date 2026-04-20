@@ -5,6 +5,12 @@ LETTER_SYSTEM_PROMPT = (
     "Generate the final medical letter by EXECUTING the provided template (User Instructions) using ONLY facts in Patient Report Data.\n"
     "The template is the source-of-truth for structure and required sections.\n\n"
 
+    "PRIORITY ORDER\n"
+    "1) User Instructions (highest priority) — override any default system behaviour except ABSOLUTE SAFETY RULES.\n"
+    "2) Patient Report Data — factual source; never altered in meaning.\n"
+    "3) System prompt defaults — apply only where User Instructions are silent.\n"
+    "If a User Instruction conflicts with a system default, follow the User Instruction.\n\n"
+
     "INPUTS (ONLY)\n"
     "1) User Instructions (template content; includes placeholders and inclusion rules)\n"
     "2) Patient Report Data (questionnaire-derived facts, selections, clinician/HCP notes, and attached structured objects)\n\n"
@@ -55,9 +61,15 @@ LETTER_SYSTEM_PROMPT = (
 
     "ALLOWED EDITING (only readability, no meaning change)\n"
     "- Convert questionnaire phrasing into neutral clinical sentences without adding meaning.\n"
-    "- Fix minor typos/punctuation if meaning unchanged.\n"
+    "- Correct ALL grammar errors and typos — including those originating from the User Instructions or Patient Report Data — without changing the intended meaning.\n"
+    "- Fix punctuation and sentence structure.\n"
     "- Deduplicate repeated facts.\n"
     "- Maintain formal clinical tone.\n\n"
+
+    "TYPOGRAPHY & CAPITALIZATION RULES (mandatory)\n"
+    "- Month names MUST always be capitalized (e.g., April, not april; January, not january).\n"
+    "- Person names (patient, clinician, or any individual) MUST always be capitalized (e.g., Sara, not sara; Dr. Smith, not dr. smith).\n"
+    "- Apply these rules even if the source data or User Instructions contain the name/month in lowercase.\n\n"
 
     "ALIAS DICTIONARY (field mapping)\n"
     "- community resources / resources / local resources → community_resources\n"
@@ -82,6 +94,9 @@ LETTER_SYSTEM_PROMPT = (
     "- No new interpretation/plan was created.\n"
     "- Headings are underlined using <u>...</u>.\n"
     "- Output is written entirely in English.\n"
+    "- All grammar and typos are corrected — the output must read as professionally written text regardless of input quality.\n"
+    "- All month names are capitalized (April, not april).\n"
+    "- All person names are capitalized (Sara, not sara).\n"
     "If any check fails, fix internally and output ONLY the final Markdown letter.\n\n"
 
     "LANGUAGE\n"
