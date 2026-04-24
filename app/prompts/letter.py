@@ -15,13 +15,13 @@ LETTER_SYSTEM_PROMPT = (
     "1) User Instructions (template content; includes placeholders and inclusion rules)\n"
     "2) Patient Report Data (questionnaire-derived facts, selections, clinician/HCP notes, and attached structured objects)\n\n"
 
-    “ABSOLUTE SAFETY RULES (never violate)\n”
-    “- No invention: Do NOT add diagnoses, symptoms, timelines, tests, severity labels, risks, interpretations, or recommendations unless explicitly present in Patient Report Data OR explicitly requested in the template AND supported by the data.\n”
-    “- No missing-data commentary: If something is missing/unclear, OMIT it silently. Do NOT write “unknown / not reported / N/A” unless the template explicitly requires those exact words.\n”
-    “- No inference: Do NOT infer causality, meaning, severity, risk, or diagnoses.\n”
-    “- Plan safety: If the template includes Plan/Recommendations, include ONLY items explicitly present in Patient Report Data (e.g., clinician notes or listed recommendations). Never generate new plans.\n”
-    “- Scores/derived values: You may restate numeric scores ONLY if present. Do NOT interpret them unless the interpretation text is explicitly present in the data.\n”
-    “- GRAMMAR EXCEPTION: Correcting spelling, grammar, punctuation, and typos is NEVER considered altering meaning or inventing facts. Grammar correction is mandatory and does NOT violate any safety rule above.\n\n”
+    "ABSOLUTE SAFETY RULES (never violate)\n"
+    "- No invention: Do NOT add diagnoses, symptoms, timelines, tests, severity labels, risks, interpretations, or recommendations unless explicitly present in Patient Report Data OR explicitly requested in the template AND supported by the data.\n"
+    "- No missing-data commentary: If something is missing/unclear, OMIT it silently. Do NOT write \"unknown / not reported / N/A\" unless the template explicitly requires those exact words.\n"
+    "- No inference: Do NOT infer causality, meaning, severity, risk, or diagnoses.\n"
+    "- Plan safety: If the template includes Plan/Recommendations, include ONLY items explicitly present in Patient Report Data (e.g., clinician notes or listed recommendations). Never generate new plans.\n"
+    "- Scores/derived values: You may restate numeric scores ONLY if present. Do NOT interpret them unless the interpretation text is explicitly present in the data.\n"
+    "- GRAMMAR EXCEPTION: Correcting spelling, grammar, punctuation, and typos is NEVER considered altering meaning or inventing facts. Grammar correction is mandatory and does NOT violate any safety rule above.\n\n"
 
     "OUTPUT FORMAT (MANDATORY)\n"
     "- Output MUST be Markdown only.\n"
@@ -56,7 +56,7 @@ LETTER_SYSTEM_PROMPT = (
     "  * If it is a standalone line/bullet → remove that line/bullet.\n"
     "  * If it is inside a sentence → remove the smallest containing clause cleanly.\n"
     "- If a sentence has multiple placeholders and only some exist → rewrite to include only existing facts WITHOUT adding meaning.\n"
-    "- Never leave awkward blanks (e.g., “The patient reports .”).\n\n"
+    "- Never leave awkward blanks (e.g., \"The patient reports \").\n\n"
 
     "HEADING DETECTION & RENDERING\n"
     "- If a line looks like a section header (short standalone line surrounded by blank lines or followed by content), render it as:\n"
