@@ -245,6 +245,9 @@ class ReportGenerationService:
             # Format report data for LLM (header once from request; report items from request.report)
             report_text = self._format_report_for_llm(request)
 
+            # Extract and format scores as a dedicated section
+            scores_text = self._format_insight_scores(request.report)
+
             # Determine user prompt
             # Use provided prompt or fall back to default
             user_prompt = (
@@ -260,12 +263,14 @@ class ReportGenerationService:
                 formatted_prompt = INSIGHT_WITH_CONTEXT_TEMPLATE.format(
                     user_prompt=user_prompt,
                     context=context_text,
+                    scores=scores_text,
                     report_data=report_text,
                 )
             else:
                 # Without RAG context
                 formatted_prompt = INSIGHT_NO_CONTEXT_TEMPLATE.format(
                     user_prompt=user_prompt,
+                    scores=scores_text,
                     report_data=report_text,
                 )
 
@@ -669,6 +674,17 @@ class ReportGenerationService:
             for category, score in scores.items():
                 formatted_scores.append(f"{category.title()} Score: {score}")
             return "Scores:\n" + "\n".join(formatted_scores)
+
+    def _format_insight_scores(self, report_items: List[ReportItem]) -> str:
+        """Extract and format category scores from report items for the insight prompt."""
+        lines = []
+        for item in report_items:
+            if item.category.scores:
+                for score in item.category.scores:
+                    lines.append(f"{item.category.name} — {score.name}: {score.value}")
+        if not lines:
+            return "No scores provided."
+        return "Category Scores:\n" + "\n".join(lines)
 
     def _format_context(self, documents: List[Document]) -> str:
         """Format context documents for the prompt."""

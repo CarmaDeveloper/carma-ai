@@ -17,6 +17,11 @@ Do NOT include any insight, recommendation, or interpretation unless it is **exp
 
 ---
 
+## Scoring Information
+{scores}
+
+---
+
 ## Patient Report Data
 Below is the structured patient report data to analyze:
 
@@ -68,6 +73,11 @@ INSIGHT_NO_CONTEXT_TEMPLATE = """You are an expert healthcare analyst specializi
 
 ## Your Task
 {user_prompt}
+
+---
+
+## Scoring Information
+{scores}
 
 ---
 
