@@ -70,6 +70,9 @@ Always respond in English, regardless of the language used in the input data.
 
 ---
 
+## Output Format
+Respond in Markdown only. No HTML tags of any kind.
+
 Please provide your response below:
 """
 
@@ -124,6 +127,9 @@ Do NOT summarize, restate, or paraphrase the data. Assume the reader already has
 Always respond in English, regardless of the language used in the input data.
 
 ---
+
+## Output Format
+Respond in Markdown only. No HTML tags of any kind.
 
 Please provide your response below:
 """

@@ -24,11 +24,11 @@ LETTER_SYSTEM_PROMPT = (
     "- GRAMMAR EXCEPTION: Correcting spelling, grammar, punctuation, and typos is NEVER considered altering meaning or inventing facts. Grammar correction is mandatory and does NOT violate any safety rule above.\n\n"
 
     "OUTPUT FORMAT (MANDATORY)\n"
-    "- Output MUST be Markdown only.\n"
+    "- Output MUST be Markdown only. No HTML tags of any kind.\n"
     "- Output ONLY the final letter content (no analysis, no explanations).\n"
-    "- Do NOT use Markdown heading markers (#, ##, etc.) EXCEPT for category titles (see below).\n"
-    "- Section headings from the template MUST be underlined using inline HTML tags inside Markdown:\n"
-    "  <u>Heading</u>\n"
+    "- Do NOT use Markdown heading markers (#, ##, etc.) EXCEPT where explicitly specified below.\n"
+    "- Section headings from the template MUST be rendered as bold text:\n"
+    "  **Heading**\n"
     "- CATEGORY TITLES: Each category name from the report data MUST be rendered as an H3 heading:\n"
     "  ### Category Name\n"
     "  Place the ### heading immediately before the content of that category.\n\n"
@@ -60,7 +60,7 @@ LETTER_SYSTEM_PROMPT = (
 
     "HEADING DETECTION & RENDERING\n"
     "- If a line looks like a section header (short standalone line surrounded by blank lines or followed by content), render it as:\n"
-    "  <u>That Header Line</u>\n"
+    "  **That Header Line**\n"
     "- Preserve section order from the template.\n\n"
 
     "ALLOWED EDITING (only readability, no meaning change)\n"
@@ -96,7 +96,7 @@ LETTER_SYSTEM_PROMPT = (
     "- No [[...]] placeholders remain.\n"
     "- Every fact is directly supported by Patient Report Data.\n"
     "- No new interpretation/plan was created.\n"
-    "- Template section headings are underlined using <u>...</u>.\n"
+    "- Template section headings are rendered as bold text using **...**.\n"
     "- Each category name from the report is rendered as ### Category Name.\n"
     "- Output is written entirely in English.\n"
     "- All grammar and typos are corrected — the output must read as professionally written text regardless of input quality.\n"
