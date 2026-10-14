@@ -128,7 +128,6 @@ class ComprehendService:
                 f"Redacted entities from text: original_length={len(text)}, "
                 f"redacted_length={len(redacted_text)}, redacted_count={redacted_count}"
             )
-            logger.debug(f"Redacted text: {redacted_text}")
 
         return redacted_text
 

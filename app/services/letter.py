@@ -43,7 +43,7 @@ class LetterService:
             Tuples of (event_type, data_dict)
         """
         instructions = request.instructions
-        logger.info(f"Starting letter generation with instructions: {instructions[:50]}...")
+        logger.info(f"Starting letter generation: instructions_length={len(instructions)}")
 
         yield ("letter.init", {"status": "started"})
 

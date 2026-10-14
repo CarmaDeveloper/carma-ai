@@ -77,7 +77,7 @@ class ReportGenerationService:
         logger.info(
             f"Starting report generation: knowledge_id={request.knowledge_id}, "
             f"qa_count={len(request.qas)}, prompt_length={len(request.prompt)}, "
-            f"scores={scores}"
+            f"score_count={len(scores or {})}"
         )
 
         try:
@@ -98,7 +98,6 @@ class ReportGenerationService:
             logger.info(
                 f"Completed PII redaction: redacted_count={len(redacted_answers)}"
             )
-            logger.info(f"Redacted answers: {redacted_answers}")
 
             # Step 2: Get context from vector store if knowledge_id provided
             # INPUT: knowledge_id = "kb-123", request.qas (questions extracted from it)
@@ -154,7 +153,6 @@ class ReportGenerationService:
             )
 
             logger.info(f"Generated report: message_length={len(message)}")
-            logger.info(f"Message: {message}")
             if token_usage:
                 logger.info(
                     f"Token usage: input={token_usage.input_tokens}, output={token_usage.output_tokens}, total={token_usage.total_tokens}"
@@ -552,7 +550,7 @@ class ReportGenerationService:
             logger.info("Generating report with token tracking")
             # Determine effective prompt via prompts module helper
             effective_user_prompt = compute_effective_prompt(user_prompt)
-            logger.info(f"User prompt (effective): {effective_user_prompt}")
+            logger.info(f"User prompt (effective): length={len(effective_user_prompt)}")
 
             # Choose the appropriate prompt template based on whether we have context
             if context_docs:
@@ -574,7 +572,7 @@ class ReportGenerationService:
                     scores=scores_text,
                 )
 
-            logger.info(f"Final formatted prompt: {formatted_prompt}")
+            logger.info(f"Final formatted prompt: length={len(formatted_prompt)}")
 
             # Collect chunks and usage
             message = ""
@@ -727,32 +725,15 @@ class ReportGenerationService:
         return document_ids
 
     def _log_bedrock_request(self, request, qa_text, context_docs, scores_text):
-        """Log the full request being sent to Bedrock including all prompts and context."""
-        logger.info(f"=== BEDROCK REQUEST LOG ===")
-        logger.info(f"Knowledge ID: {request.knowledge_id}")
-        logger.info(f"Total QA pairs: {len(request.qas)}")
-        logger.info(f"Total context documents: {len(context_docs)}")
-
-        # Log the user prompt
-        logger.info(f"User prompt: {request.prompt}")
-
-        # Log the formatted QA text
-        logger.info(f"Formatted QA pairs:")
-        logger.info(f"{qa_text}")
-
-        # Log the scores
-        logger.info(f"Scores:")
-        logger.info(f"{scores_text}")
-
-        # Log context documents that will be sent
-        logger.info(f"Context documents being sent:")
-        for i, doc in enumerate(context_docs, 1):
-            source_info = doc.metadata.get("source_file", "Unknown")
-            doc_id = doc.metadata.get("document_id", "Unknown")
-            logger.info(f"  Document {i} (from {source_info}, doc_id: {doc_id}):")
-            logger.info(f"    Content: {doc.page_content[:300]}...")
-
-        logger.info(f"=== END BEDROCK REQUEST LOG ===")
+        """Log the size of the request being sent to Bedrock. Never log its clinical text."""
+        doc_ids = [doc.metadata.get("document_id", "Unknown") for doc in context_docs]
+        logger.info(
+            f"Bedrock request: knowledge_id={request.knowledge_id}, "
+            f"qa_count={len(request.qas)}, context_doc_count={len(context_docs)}, "
+            f"prompt_length={len(request.prompt)}, qa_text_length={len(qa_text)}, "
+            f"scores_text_length={len(scores_text)}, "
+            f"doc_ids={doc_ids}"
+        )
 
     def _extract_token_usage(self, response) -> Optional[TokenUsage]:
         """Extract token usage information from LangChain response."""

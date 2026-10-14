@@ -38,7 +38,7 @@ class TemplateService:
         Yields:
             Tuples of (event_type, data_dict)
         """
-        logger.info(f"Starting template generation for prompt: {prompt[:50]}...")
+        logger.info(f"Starting template generation: prompt_length={len(prompt)}")
 
         yield ("template.init", {"status": "started", "prompt": prompt})
 
@@ -64,7 +64,7 @@ class TemplateService:
                         full_title += chunk
                         yield ("template.title", {"content": chunk})
 
-            logger.debug(f"Title generated: {full_title}")
+            logger.debug(f"Title generated: length={len(full_title)}")
 
         except Exception as e:
             logger.error(f"Error generating title: {e}", exc_info=True)

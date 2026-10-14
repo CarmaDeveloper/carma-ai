@@ -115,8 +115,9 @@ The API will be available at `http://localhost:8000`
 | `CHUNK_SIZE` | Text chunk size for splitting | `1000` | No |
 | `CHUNK_OVERLAP` | Text chunk overlap | `200` | No |
 | `MAX_FILE_SIZE` | Maximum file size (bytes) | `52428800` (50MB) | No |
-| `DEBUG` | Enable debug mode | `True` | No |
-| `LOG_LEVEL` | Logging level | `DEBUG` | No |
+| `ENVIRONMENT` | Environment name | `production` | No |
+| `DEBUG` | Enable debug mode | `False` | No |
+| `LOG_LEVEL` | Logging level | `INFO` | No |
 
 
 ## API Usage

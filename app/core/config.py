@@ -124,9 +124,9 @@ class Settings(BaseSettings):
     )
 
     # Environment
-    ENVIRONMENT: str = Field(default="development", env="ENVIRONMENT")
-    LOG_LEVEL: str = Field(default="DEBUG", env="LOG_LEVEL")
-    DEBUG: bool = Field(default=True, env="DEBUG")
+    ENVIRONMENT: str = Field(default="production", env="ENVIRONMENT")
+    LOG_LEVEL: str = Field(default="INFO", env="LOG_LEVEL")
+    DEBUG: bool = Field(default=False, env="DEBUG")
 
     class Config:
         env_file = ".env"

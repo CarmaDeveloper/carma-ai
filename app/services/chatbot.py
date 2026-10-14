@@ -107,7 +107,7 @@ class ChatbotService:
                     if len(title) > SESSION_TITLE_MAX_LENGTH:
                         title = title[: SESSION_TITLE_MAX_LENGTH - 3] + "..."
 
-                    logger.debug(f"Generated session title: {title}")
+                    logger.debug(f"Generated session title: length={len(title)}")
                     return title
 
                 logger.warning("LLM returned empty title, using fallback")
@@ -148,7 +148,7 @@ class ChatbotService:
             
             response, _ = await self.llm_service.generate(messages)
             query = response.strip().strip("\"'")
-            logger.info(f"Generated search query: {query}")
+            logger.info(f"Generated search query: length={len(query)}")
             return query
         except Exception as e:
             logger.warning(f"Failed to generate search query, using message as fallback: {e}")
@@ -287,7 +287,7 @@ class ChatbotService:
                     metadata=metadata or {},
                 )
                 logger.info(
-                    f"Created new session in database: {session_id} with title: {title}"
+                    f"Created new session in database: {session_id}"
                 )
             except Exception as e:
                 logger.error(f"Error creating session: {e}", exc_info=True)
@@ -387,7 +387,7 @@ class ChatbotService:
                 # Format results
                 formatted_search_results = web_search_service.format_results(search_results)
                 
-                logger.info(f"Web search completed for '{search_query}', found {len(search_results)} results")
+                logger.info(f"Web search completed: query_length={len(search_query)}, result_count={len(search_results)}")
                 
             except Exception as e:
                 logger.error(f"Web search failed: {e}", exc_info=True)
