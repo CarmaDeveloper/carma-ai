@@ -16,6 +16,35 @@ logger = setup_logger(__name__)
 # Constants
 LANGUAGE_CODE = "en"
 REPLACE_VIA = "[REDACTED]"
+# DetectPiiEntities accepts at most 100 KB of UTF-8 text per call
+MAX_TEXT_BYTES = 100_000
+
+
+def _split_text(text: str) -> List[str]:
+    """Split text at line breaks into chunks under the Comprehend size limit."""
+    chunks: List[str] = []
+    current = ""
+    size = 0
+    for line in text.splitlines(keepends=True):
+        line_size = len(line.encode("utf-8"))
+        if current and size + line_size > MAX_TEXT_BYTES:
+            chunks.append(current)
+            current, size = "", 0
+        while line_size > MAX_TEXT_BYTES:
+            # A UTF-8 character is at most 4 bytes. Cut at a space so that
+            # a name or number is not split in two.
+            cut = MAX_TEXT_BYTES // 4
+            space = line.rfind(" ", 0, cut)
+            if space > 0:
+                cut = space + 1
+            chunks.append(line[:cut])
+            line = line[cut:]
+            line_size = len(line.encode("utf-8"))
+        current += line
+        size += line_size
+    if current or not chunks:
+        chunks.append(current)
+    return chunks
 
 
 class ComprehendService:
@@ -70,6 +99,34 @@ class ComprehendService:
         except (BotoCoreError, ClientError) as e:
             logger.error(f"AWS Comprehend error: {str(e)}")
             raise ComprehendError(f"Comprehend service error: {str(e)}")
+
+    async def redact_texts(self, texts: List[str]) -> List[str]:
+        """
+        Redact free text before it is sent to the LLM.
+
+        Every AI endpoint calls this before it builds its prompt. Long texts
+        are split at line breaks to stay under the Comprehend size limit and
+        joined again after redaction.
+
+        Args:
+            texts: List of text strings to process
+
+        Returns:
+            List of texts with PII redacted, in the same order
+
+        Raises:
+            ComprehendError: If comprehend processing fails. The caller must
+                not send the unredacted text to the LLM.
+        """
+        chunked = [_split_text(text) for text in texts]
+        redacted = await self.redact_pii([chunk for chunks in chunked for chunk in chunks])
+
+        results = []
+        position = 0
+        for chunks in chunked:
+            results.append("".join(redacted[position : position + len(chunks)]))
+            position += len(chunks)
+        return results
 
     async def _process_text(self, text: str) -> str:
         """Process a single text for PII detection and redaction."""

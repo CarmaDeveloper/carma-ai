@@ -111,7 +111,7 @@ The API will be available at `http://localhost:8000`
 | `S3_REGION` | S3 region | `ca-central-1` | No |
 | `COMPREHEND_REGION` | AWS Comprehend region | `ca-central-1` | No |
 | `COMPREHEND_THRESHOLD` | PII detection threshold | `0.9` | No |
-| `COMPREHEND_TYPES` | PII types to detect | `["LOCATION", "PERSON"]` | No |
+| `COMPREHEND_TYPES` | PII types redacted before text goes to the LLM | `["NAME", "ADDRESS", "PHONE", "EMAIL", "CA_HEALTH_NUMBER", "CA_SOCIAL_INSURANCE_NUMBER", "USERNAME", "PASSWORD", "CREDIT_DEBIT_NUMBER", "BANK_ACCOUNT_NUMBER", "PIN"]` | No |
 | `CHUNK_SIZE` | Text chunk size for splitting | `1000` | No |
 | `CHUNK_OVERLAP` | Text chunk overlap | `200` | No |
 | `MAX_FILE_SIZE` | Maximum file size (bytes) | `52428800` (50MB) | No |

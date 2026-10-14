@@ -81,6 +81,10 @@ def test_chat_ignores_internet_search_when_web_search_is_disabled(monkeypatch):
         queries.append(query)
         return []
 
+    async def no_redaction(texts):
+        return texts
+
+    monkeypatch.setattr(chatbot_module.comprehend_service, "redact_texts", no_redaction)
     monkeypatch.setattr(chatbot_module.web_search_service, "enabled", False)
     monkeypatch.setattr(chatbot_module.web_search_service, "search", fake_search)
     monkeypatch.setattr(ChatbotService, "_generate_search_query", fake_generate_search_query)

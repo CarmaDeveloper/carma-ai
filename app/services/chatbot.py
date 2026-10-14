@@ -9,7 +9,7 @@ from uuid import UUID
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
 
 from app.core.config import settings
-from app.core.exceptions import ModelError
+from app.core.exceptions import ComprehendError, ModelError
 from app.core.langfuse import langfuse_context
 from app.core.logging import setup_logger
 from app.repositories import (
@@ -25,6 +25,7 @@ from app.prompts.chatbot import (
 )
 from app.schemas.chatbot import DocumentReference
 from app.schemas.report import ReferenceItem
+from app.services.comprehend import comprehend_service
 from app.services.llm import LLMService, ModelConfig
 from app.services.rag_retrieval import RAGRetrievalService
 from app.services.s3 import s3_service
@@ -269,6 +270,18 @@ class ChatbotService:
         """
         # Internet search is ignored when web search is not configured
         use_internet_search = use_internet_search and web_search_service.enabled
+
+        # Redact PII from the new message before the LLM call and before it is
+        # stored, so that the history sent with later messages is redacted too
+        try:
+            [message] = await comprehend_service.redact_texts([message])
+        except ComprehendError as e:
+            logger.error(f"PII redaction failed, chat message not processed: {e}")
+            yield (
+                "chatbot.error",
+                {"error": "PII redaction failed", "message": "Failed to redact personal information"},
+            )
+            return
 
         # Determine if this is a new session
         is_new_session = session_id is None

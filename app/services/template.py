@@ -5,9 +5,11 @@ from typing import AsyncGenerator, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.core.exceptions import ComprehendError
 from app.core.langfuse import langfuse_context
 from app.core.logging import setup_logger
 from app.prompts.template import TEMPLATE_TITLE_SYSTEM_PROMPT, TEMPLATE_CONTENT_SYSTEM_PROMPT
+from app.services.comprehend import comprehend_service
 from app.services.llm import LLMService
 
 logger = setup_logger(__name__)
@@ -41,6 +43,17 @@ class TemplateService:
         logger.info(f"Starting template generation: prompt_length={len(prompt)}")
 
         yield ("template.init", {"status": "started", "prompt": prompt})
+
+        try:
+            # Redact PII from the prompt before the LLM call
+            [prompt] = await comprehend_service.redact_texts([prompt])
+        except ComprehendError as e:
+            logger.error(f"PII redaction failed, template not generated: {e}")
+            yield (
+                "template.error",
+                {"error": "PII redaction failed", "message": "Failed to redact personal information"},
+            )
+            return
 
         try:
             messages = [

@@ -60,13 +60,17 @@ class Settings(BaseSettings):
     )
     COMPREHEND_TYPES: list[str] = Field(
         default=[
+            "NAME",
+            "ADDRESS",
+            "PHONE",
+            "EMAIL",
+            "CA_HEALTH_NUMBER",
+            "CA_SOCIAL_INSURANCE_NUMBER",
             "USERNAME",
             "PASSWORD",
             "CREDIT_DEBIT_NUMBER",
-            "CREDIT_DEBIT_CVV",
-            "CREDIT_DEBIT_EXPIRY",
-            "PIN",
             "BANK_ACCOUNT_NUMBER",
+            "PIN",
         ],
         env="COMPREHEND_TYPES",
     )

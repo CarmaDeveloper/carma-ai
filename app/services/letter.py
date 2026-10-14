@@ -5,10 +5,12 @@ from typing import AsyncGenerator, List, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.core.exceptions import ComprehendError
 from app.core.langfuse import langfuse_context
 from app.core.logging import setup_logger
 from app.prompts.letter import LETTER_SYSTEM_PROMPT
 from app.schemas.letter import LetterGenerationRequest
+from app.services.comprehend import comprehend_service
 from app.services.llm import LLMService
 
 logger = setup_logger(__name__)
@@ -32,8 +34,10 @@ class LetterService:
         """
         Generate medical letter content from the full request and stream as events.
 
-        Uses questionnaireTitle, patientInformation, completedAt at top level (once),
-        plus report and instructions per spec.
+        Uses questionnaireTitle and completedAt at top level (once), plus report
+        and instructions per spec. patientInformation is ignored: direct
+        identifiers are not sent to the LLM. Instructions and report are
+        redacted with Comprehend before the LLM call.
 
         Args:
             request: Full letter generation request body
@@ -52,12 +56,6 @@ class LetterService:
             header_parts: List[str] = []
             if request.questionnaire_title:
                 header_parts.append(f"Questionnaire: {request.questionnaire_title}")
-            if request.patient_information:
-                pi = request.patient_information
-                if pi.full_name:
-                    header_parts.append(f"Patient: {pi.full_name}")
-                if pi.birth_day:
-                    header_parts.append(f"Date of birth: {pi.birth_day}")
             if request.completed_at:
                 header_parts.append(f"Completed at: {request.completed_at}")
             header_block = "\n".join(header_parts) if header_parts else ""
@@ -65,6 +63,11 @@ class LetterService:
             serialized_report = json.dumps(
                 [item.model_dump(mode="json", exclude_none=True) for item in request.report],
                 indent=2,
+            )
+
+            # Redact PII from the instructions and report before the LLM call
+            instructions, serialized_report = await comprehend_service.redact_texts(
+                [instructions, serialized_report]
             )
 
             prompt_content = (
@@ -96,6 +99,10 @@ class LetterService:
                     if chunk:
                         yield ("letter.content", {"content": chunk})
 
+        except ComprehendError as e:
+            logger.error(f"PII redaction failed, letter not generated: {e}")
+            yield ("letter.error", {"error": "PII redaction failed"})
+            return
         except Exception as e:
             logger.error(f"Error generating letter: {e}", exc_info=True)
             yield ("letter.error", {"error": "Failed to generate letter"})

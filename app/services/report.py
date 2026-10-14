@@ -6,7 +6,7 @@ from typing import AsyncGenerator, Dict, List, Set, Optional, Tuple
 from langchain_core.messages import HumanMessage
 from langchain_core.documents import Document
 
-from app.core.exceptions import ModelError
+from app.core.exceptions import ComprehendError, ModelError
 from app.core.langfuse import langfuse_context
 from app.core.logging import setup_logger
 from app.repositories import DocumentRecordRepositoryProtocol
@@ -81,8 +81,8 @@ class ReportGenerationService:
         )
 
         try:
-            # Step 1: Process answers through Comprehend for PII redaction
-            # Extract all answers from hierarchical structure
+            # Step 1: Process questions, answers and the user prompt through
+            # Comprehend for PII redaction. A Comprehend error stops the request.
             # INPUT: request.qas = [
             #   QAItem(question="How is your health?", answer="Good", sub_questions=[
             #       QAItem(question="Any conditions?", answer="Yes, diabetes", sub_questions=None)
@@ -90,14 +90,15 @@ class ReportGenerationService:
             # ]
             # OUTPUT: answers = ["Good", "Yes, diabetes"]  (flat list of all answers recursively)
             answers = self._extract_all_answers(request.qas)
+            qa_text = self._format_qas(request.qas, answers)
 
-            # INPUT: answers = ["My name is John Doe", "Email: john@example.com"]
-            # OUTPUT: redacted_answers = ["My name is [NAME]", "Email: [EMAIL]"]
-            redacted_answers = await comprehend_service.redact_pii(answers)
-
-            logger.info(
-                f"Completed PII redaction: redacted_count={len(redacted_answers)}"
+            # INPUT: qa_text = "Question: ...\nAnswer: My name is John Doe", prompt
+            # OUTPUT: qa_text = "Question: ...\nAnswer: My name is [REDACTED]", prompt
+            qa_text, user_prompt = await comprehend_service.redact_texts(
+                [qa_text, request.prompt]
             )
+
+            logger.info("Completed PII redaction of questions, answers and prompt")
 
             # Step 2: Get context from vector store if knowledge_id provided
             # INPUT: knowledge_id = "kb-123", request.qas (questions extracted from it)
@@ -126,16 +127,6 @@ class ReportGenerationService:
             )
 
             # Step 5: Generate report with direct model call to capture token usage
-            # INPUT: request.qas, redacted_answers
-            # OUTPUT: qa_text = """
-            #   Question: How is your health?
-            #   Answer: Good
-            #
-            #     Question: Any conditions?
-            #     Answer: Yes, diabetes
-            # """
-            qa_text = self._format_qas(request.qas, redacted_answers)
-
             # Format scores for inclusion in prompt
             # INPUT: scores = {"health": 85.0, "body": 70.0}
             # OUTPUT: scores_text = "Scores:\nHealth Score: 85.0\nBody Score: 70.0"
@@ -149,7 +140,7 @@ class ReportGenerationService:
             # OUTPUT: message = "Based on the patient responses, here are the key findings..."
             #         token_usage = TokenUsage(input_tokens=1250, output_tokens=350, total_tokens=1600)
             message, token_usage = await self._generate_with_token_tracking(
-                request.prompt, context_docs, qa_text, scores_text, user_id=user_id
+                user_prompt, context_docs, qa_text, scores_text, user_id=user_id
             )
 
             logger.info(f"Generated report: message_length={len(message)}")
@@ -243,16 +234,17 @@ class ReportGenerationService:
             # Format report data for LLM (header once from request; report items from request.report)
             report_text = self._format_report_for_llm(request)
 
+            # Redact PII from the report and the user prompt before the LLM call
+            report_text, user_prompt = await comprehend_service.redact_texts(
+                [report_text, request.prompt or ""]
+            )
+
             # Extract and format scores as a dedicated section
             scores_text = self._format_insight_scores(request.report)
 
             # Determine user prompt
             # Use provided prompt or fall back to default
-            user_prompt = (
-                request.prompt.strip()
-                if request.prompt and request.prompt.strip()
-                else DEFAULT_INSIGHT_TASK
-            )
+            user_prompt = user_prompt.strip() or DEFAULT_INSIGHT_TASK
 
             # Build final prompt using appropriate template
             if context_docs:
@@ -294,6 +286,10 @@ class ReportGenerationService:
                     if chunk:
                         yield ("insight.content", {"content": chunk})
 
+        except ComprehendError as e:
+            logger.error(f"PII redaction failed, insight not generated: {e}")
+            yield ("insight.error", {"error": "PII redaction failed"})
+            return
         except Exception as e:
             logger.error(f"Error generating insight: {e}", exc_info=True)
             yield ("insight.error", {"error": "Failed to generate insights"})
@@ -403,17 +399,9 @@ class ReportGenerationService:
         lines = []
 
         # Header (once from top-level request)
+        # patient_information is ignored: direct identifiers are not sent to the LLM
         if request.questionnaire_title:
             lines.append(f"# {request.questionnaire_title}")
-        if request.patient_information:
-            pi = request.patient_information
-            if pi.full_name or pi.birth_day:
-                parts = []
-                if pi.full_name:
-                    parts.append(pi.full_name)
-                if pi.birth_day:
-                    parts.append(f"DOB: {pi.birth_day}")
-                lines.append("Patient: " + ", ".join(parts))
         if request.completed_at:
             lines.append(f"Completed: {request.completed_at}")
         if lines:
@@ -612,7 +600,7 @@ class ReportGenerationService:
             logger.error(f"Failed to generate report with token tracking: {str(e)}")
             raise ModelError(f"Failed to generate report: {str(e)}")
 
-    def _format_qas(self, qas: List[QAItem], redacted_answers: List[str]) -> str:
+    def _format_qas(self, qas: List[QAItem], answers: List[str]) -> str:
         """Format question-answer pairs for the prompt, preserving hierarchical structure."""
         if not qas:
             return NO_QAS_PROVIDED_TEXT
@@ -623,7 +611,7 @@ class ReportGenerationService:
         # Format each QA item with proper indentation
         formatted_qas = []
         for i, (qa, depth) in enumerate(qa_items):
-            answer = redacted_answers[i] if i < len(redacted_answers) else qa.answer
+            answer = answers[i] if i < len(answers) else qa.answer
             indent = "  " * depth  # 2 spaces per depth level
             formatted_qas.append(
                 f"{indent}Question: {qa.question}\n{indent}Answer: {answer}"
