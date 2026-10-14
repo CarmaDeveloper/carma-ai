@@ -267,6 +267,9 @@ class ChatbotService:
         Raises:
             Exception: Any underlying model or database error
         """
+        # Internet search is ignored when web search is not configured
+        use_internet_search = use_internet_search and web_search_service.enabled
+
         # Determine if this is a new session
         is_new_session = session_id is None
 

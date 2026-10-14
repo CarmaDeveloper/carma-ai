@@ -116,7 +116,7 @@ class Settings(BaseSettings):
     )  # Max number of history messages to use as search queries
 
     # Langfuse observability settings
-    LANGFUSE_ENABLED: bool = Field(default=True, env="LANGFUSE_ENABLED")
+    LANGFUSE_ENABLED: bool = Field(default=False, env="LANGFUSE_ENABLED")
     LANGFUSE_SECRET_KEY: str = Field(default=None, env="LANGFUSE_SECRET_KEY")
     LANGFUSE_PUBLIC_KEY: str = Field(default=None, env="LANGFUSE_PUBLIC_KEY")
     LANGFUSE_BASE_URL: str = Field(
