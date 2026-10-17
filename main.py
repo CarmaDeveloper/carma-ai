@@ -73,12 +73,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 def create_application() -> FastAPI:
     """Create and configure FastAPI application."""
+    # The API docs are not served in production.
+    show_docs = settings.ENVIRONMENT != "production"
     app = FastAPI(
         title=settings.APP_NAME,
         description="CARMA AI",
         version="0.1.0",
-        docs_url="/docs",
-        redoc_url="/redoc" if settings.DEBUG else None,
+        docs_url="/docs" if show_docs else None,
+        redoc_url="/redoc" if show_docs and settings.DEBUG else None,
+        openapi_url="/openapi.json" if show_docs else None,
         servers=[
             {
                 "url": f"http://localhost:{settings.DOCS_PORT}",
