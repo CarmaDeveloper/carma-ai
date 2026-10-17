@@ -180,14 +180,20 @@ class SessionRepository:
         return True
 
     async def delete_old_sessions(self, retention_days: int) -> int:
-        """Delete old inactive sessions."""
-        cutoff_time = datetime.now(timezone.utc) - timedelta(days=retention_days)
+        """Hard-delete sessions not used for retention_days, with their messages.
 
+        Active and soft-deleted (inactive) sessions are both removed.
+        """
+        cutoff_time = datetime.now(timezone.utc) - timedelta(days=retention_days)
+        old_sessions = select(SessionModel.session_id).where(
+            SessionModel.last_accessed_at < cutoff_time
+        )
+
+        await self.session.execute(
+            delete(MessageModel).where(MessageModel.session_id.in_(old_sessions))
+        )
         result = await self.session.execute(
-            delete(SessionModel).where(
-                SessionModel.is_active == False,
-                SessionModel.last_accessed_at < cutoff_time,
-            )
+            delete(SessionModel).where(SessionModel.last_accessed_at < cutoff_time)
         )
         await self.session.commit()
 

@@ -92,12 +92,12 @@ class Settings(BaseSettings):
 
     # Chatbot session settings
     CHATBOT_CLEANUP_INTERVAL_SECONDS: int = Field(
-        default=60 * 60, env="CHATBOT_CLEANUP_INTERVAL_SECONDS", ge=30, le=3600
+        default=60 * 60, env="CHATBOT_CLEANUP_INTERVAL_SECONDS", ge=30, le=86400
     )  # Run cleanup every 1 hour by default
     # Chatbot persistence settings
     CHATBOT_SESSION_RETENTION_DAYS: int = Field(
         default=90, env="CHATBOT_SESSION_RETENTION_DAYS", ge=1, le=365
-    )  # Number of days to retain inactive sessions
+    )  # Number of days since last use after which a session and its messages are deleted
     CHATBOT_MESSAGE_HISTORY_LIMIT: int = Field(
         default=50, env="CHATBOT_MESSAGE_HISTORY_LIMIT", ge=10, le=500
     )  # Max messages to load from history
