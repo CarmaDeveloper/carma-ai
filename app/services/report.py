@@ -6,7 +6,7 @@ from typing import AsyncGenerator, Dict, List, Set, Optional, Tuple
 from langchain_core.messages import HumanMessage
 from langchain_core.documents import Document
 
-from app.core.exceptions import ModelError
+from app.core.exceptions import ComprehendError, ModelError
 from app.core.langfuse import langfuse_context
 from app.core.logging import setup_logger
 from app.repositories import DocumentRecordRepositoryProtocol
@@ -77,12 +77,12 @@ class ReportGenerationService:
         logger.info(
             f"Starting report generation: knowledge_id={request.knowledge_id}, "
             f"qa_count={len(request.qas)}, prompt_length={len(request.prompt)}, "
-            f"scores={scores}"
+            f"score_count={len(scores or {})}"
         )
 
         try:
-            # Step 1: Process answers through Comprehend for PII redaction
-            # Extract all answers from hierarchical structure
+            # Step 1: Process questions, answers and the user prompt through
+            # Comprehend for PII redaction. A Comprehend error stops the request.
             # INPUT: request.qas = [
             #   QAItem(question="How is your health?", answer="Good", sub_questions=[
             #       QAItem(question="Any conditions?", answer="Yes, diabetes", sub_questions=None)
@@ -90,15 +90,15 @@ class ReportGenerationService:
             # ]
             # OUTPUT: answers = ["Good", "Yes, diabetes"]  (flat list of all answers recursively)
             answers = self._extract_all_answers(request.qas)
+            qa_text = self._format_qas(request.qas, answers)
 
-            # INPUT: answers = ["My name is John Doe", "Email: john@example.com"]
-            # OUTPUT: redacted_answers = ["My name is [NAME]", "Email: [EMAIL]"]
-            redacted_answers = await comprehend_service.redact_pii(answers)
-
-            logger.info(
-                f"Completed PII redaction: redacted_count={len(redacted_answers)}"
+            # INPUT: qa_text = "Question: ...\nAnswer: My name is John Doe", prompt
+            # OUTPUT: qa_text = "Question: ...\nAnswer: My name is [REDACTED]", prompt
+            qa_text, user_prompt = await comprehend_service.redact_texts(
+                [qa_text, request.prompt]
             )
-            logger.info(f"Redacted answers: {redacted_answers}")
+
+            logger.info("Completed PII redaction of questions, answers and prompt")
 
             # Step 2: Get context from vector store if knowledge_id provided
             # INPUT: knowledge_id = "kb-123", request.qas (questions extracted from it)
@@ -127,16 +127,6 @@ class ReportGenerationService:
             )
 
             # Step 5: Generate report with direct model call to capture token usage
-            # INPUT: request.qas, redacted_answers
-            # OUTPUT: qa_text = """
-            #   Question: How is your health?
-            #   Answer: Good
-            #
-            #     Question: Any conditions?
-            #     Answer: Yes, diabetes
-            # """
-            qa_text = self._format_qas(request.qas, redacted_answers)
-
             # Format scores for inclusion in prompt
             # INPUT: scores = {"health": 85.0, "body": 70.0}
             # OUTPUT: scores_text = "Scores:\nHealth Score: 85.0\nBody Score: 70.0"
@@ -150,11 +140,10 @@ class ReportGenerationService:
             # OUTPUT: message = "Based on the patient responses, here are the key findings..."
             #         token_usage = TokenUsage(input_tokens=1250, output_tokens=350, total_tokens=1600)
             message, token_usage = await self._generate_with_token_tracking(
-                request.prompt, context_docs, qa_text, scores_text, user_id=user_id
+                user_prompt, context_docs, qa_text, scores_text, user_id=user_id
             )
 
             logger.info(f"Generated report: message_length={len(message)}")
-            logger.info(f"Message: {message}")
             if token_usage:
                 logger.info(
                     f"Token usage: input={token_usage.input_tokens}, output={token_usage.output_tokens}, total={token_usage.total_tokens}"
@@ -245,16 +234,17 @@ class ReportGenerationService:
             # Format report data for LLM (header once from request; report items from request.report)
             report_text = self._format_report_for_llm(request)
 
+            # Redact PII from the report and the user prompt before the LLM call
+            report_text, user_prompt = await comprehend_service.redact_texts(
+                [report_text, request.prompt or ""]
+            )
+
             # Extract and format scores as a dedicated section
             scores_text = self._format_insight_scores(request.report)
 
             # Determine user prompt
             # Use provided prompt or fall back to default
-            user_prompt = (
-                request.prompt.strip()
-                if request.prompt and request.prompt.strip()
-                else DEFAULT_INSIGHT_TASK
-            )
+            user_prompt = user_prompt.strip() or DEFAULT_INSIGHT_TASK
 
             # Build final prompt using appropriate template
             if context_docs:
@@ -296,6 +286,10 @@ class ReportGenerationService:
                     if chunk:
                         yield ("insight.content", {"content": chunk})
 
+        except ComprehendError as e:
+            logger.error(f"PII redaction failed, insight not generated: {e}")
+            yield ("insight.error", {"error": "PII redaction failed"})
+            return
         except Exception as e:
             logger.error(f"Error generating insight: {e}", exc_info=True)
             yield ("insight.error", {"error": "Failed to generate insights"})
@@ -378,9 +372,9 @@ class ReportGenerationService:
                     if title is None:
                         title = filename
 
-                    # Construct S3 URL and convert to HTTPS
+                    # Construct S3 URL and convert to a pre-signed HTTPS URL (the bucket is private)
                     s3_url = s3_service.construct_s3_url(knowledge_id, filename)
-                    https_url = s3_service.s3_uri_to_https_url(s3_url)
+                    https_url = s3_service.s3_uri_to_presigned_url(s3_url)
 
                     if https_url:
                         reference_items.append(
@@ -405,17 +399,9 @@ class ReportGenerationService:
         lines = []
 
         # Header (once from top-level request)
+        # patient_information is ignored: direct identifiers are not sent to the LLM
         if request.questionnaire_title:
             lines.append(f"# {request.questionnaire_title}")
-        if request.patient_information:
-            pi = request.patient_information
-            if pi.full_name or pi.birth_day:
-                parts = []
-                if pi.full_name:
-                    parts.append(pi.full_name)
-                if pi.birth_day:
-                    parts.append(f"DOB: {pi.birth_day}")
-                lines.append("Patient: " + ", ".join(parts))
         if request.completed_at:
             lines.append(f"Completed: {request.completed_at}")
         if lines:
@@ -552,7 +538,7 @@ class ReportGenerationService:
             logger.info("Generating report with token tracking")
             # Determine effective prompt via prompts module helper
             effective_user_prompt = compute_effective_prompt(user_prompt)
-            logger.info(f"User prompt (effective): {effective_user_prompt}")
+            logger.info(f"User prompt (effective): length={len(effective_user_prompt)}")
 
             # Choose the appropriate prompt template based on whether we have context
             if context_docs:
@@ -574,7 +560,7 @@ class ReportGenerationService:
                     scores=scores_text,
                 )
 
-            logger.info(f"Final formatted prompt: {formatted_prompt}")
+            logger.info(f"Final formatted prompt: length={len(formatted_prompt)}")
 
             # Collect chunks and usage
             message = ""
@@ -614,7 +600,7 @@ class ReportGenerationService:
             logger.error(f"Failed to generate report with token tracking: {str(e)}")
             raise ModelError(f"Failed to generate report: {str(e)}")
 
-    def _format_qas(self, qas: List[QAItem], redacted_answers: List[str]) -> str:
+    def _format_qas(self, qas: List[QAItem], answers: List[str]) -> str:
         """Format question-answer pairs for the prompt, preserving hierarchical structure."""
         if not qas:
             return NO_QAS_PROVIDED_TEXT
@@ -625,7 +611,7 @@ class ReportGenerationService:
         # Format each QA item with proper indentation
         formatted_qas = []
         for i, (qa, depth) in enumerate(qa_items):
-            answer = redacted_answers[i] if i < len(redacted_answers) else qa.answer
+            answer = answers[i] if i < len(answers) else qa.answer
             indent = "  " * depth  # 2 spaces per depth level
             formatted_qas.append(
                 f"{indent}Question: {qa.question}\n{indent}Answer: {answer}"
@@ -727,32 +713,15 @@ class ReportGenerationService:
         return document_ids
 
     def _log_bedrock_request(self, request, qa_text, context_docs, scores_text):
-        """Log the full request being sent to Bedrock including all prompts and context."""
-        logger.info(f"=== BEDROCK REQUEST LOG ===")
-        logger.info(f"Knowledge ID: {request.knowledge_id}")
-        logger.info(f"Total QA pairs: {len(request.qas)}")
-        logger.info(f"Total context documents: {len(context_docs)}")
-
-        # Log the user prompt
-        logger.info(f"User prompt: {request.prompt}")
-
-        # Log the formatted QA text
-        logger.info(f"Formatted QA pairs:")
-        logger.info(f"{qa_text}")
-
-        # Log the scores
-        logger.info(f"Scores:")
-        logger.info(f"{scores_text}")
-
-        # Log context documents that will be sent
-        logger.info(f"Context documents being sent:")
-        for i, doc in enumerate(context_docs, 1):
-            source_info = doc.metadata.get("source_file", "Unknown")
-            doc_id = doc.metadata.get("document_id", "Unknown")
-            logger.info(f"  Document {i} (from {source_info}, doc_id: {doc_id}):")
-            logger.info(f"    Content: {doc.page_content[:300]}...")
-
-        logger.info(f"=== END BEDROCK REQUEST LOG ===")
+        """Log the size of the request being sent to Bedrock. Never log its clinical text."""
+        doc_ids = [doc.metadata.get("document_id", "Unknown") for doc in context_docs]
+        logger.info(
+            f"Bedrock request: knowledge_id={request.knowledge_id}, "
+            f"qa_count={len(request.qas)}, context_doc_count={len(context_docs)}, "
+            f"prompt_length={len(request.prompt)}, qa_text_length={len(qa_text)}, "
+            f"scores_text_length={len(scores_text)}, "
+            f"doc_ids={doc_ids}"
+        )
 
     def _extract_token_usage(self, response) -> Optional[TokenUsage]:
         """Extract token usage information from LangChain response."""

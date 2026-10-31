@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     # AWS S3 settings
     S3_BUCKET_NAME: str = Field(default="carma-bucket", env="S3_BUCKET_NAME")
     S3_REGION: str = Field(default="ca-central-1", env="S3_REGION")
+    # The bucket is private. Reference links to knowledge files are pre-signed GET URLs with this lifetime.
+    S3_PRESIGN_TTL_SECONDS: int = Field(
+        default=900, env="S3_PRESIGN_TTL_SECONDS", ge=60, le=604800
+    )
 
     # AWS Comprehend settings
     COMPREHEND_REGION: str = Field(default="ca-central-1", env="COMPREHEND_REGION")
@@ -60,13 +64,17 @@ class Settings(BaseSettings):
     )
     COMPREHEND_TYPES: list[str] = Field(
         default=[
+            "NAME",
+            "ADDRESS",
+            "PHONE",
+            "EMAIL",
+            "CA_HEALTH_NUMBER",
+            "CA_SOCIAL_INSURANCE_NUMBER",
             "USERNAME",
             "PASSWORD",
             "CREDIT_DEBIT_NUMBER",
-            "CREDIT_DEBIT_CVV",
-            "CREDIT_DEBIT_EXPIRY",
-            "PIN",
             "BANK_ACCOUNT_NUMBER",
+            "PIN",
         ],
         env="COMPREHEND_TYPES",
     )
@@ -88,12 +96,12 @@ class Settings(BaseSettings):
 
     # Chatbot session settings
     CHATBOT_CLEANUP_INTERVAL_SECONDS: int = Field(
-        default=60 * 60, env="CHATBOT_CLEANUP_INTERVAL_SECONDS", ge=30, le=3600
+        default=60 * 60, env="CHATBOT_CLEANUP_INTERVAL_SECONDS", ge=30, le=86400
     )  # Run cleanup every 1 hour by default
     # Chatbot persistence settings
     CHATBOT_SESSION_RETENTION_DAYS: int = Field(
         default=90, env="CHATBOT_SESSION_RETENTION_DAYS", ge=1, le=365
-    )  # Number of days to retain inactive sessions
+    )  # Number of days since last use after which a session and its messages are deleted
     CHATBOT_MESSAGE_HISTORY_LIMIT: int = Field(
         default=50, env="CHATBOT_MESSAGE_HISTORY_LIMIT", ge=10, le=500
     )  # Max messages to load from history
@@ -116,7 +124,7 @@ class Settings(BaseSettings):
     )  # Max number of history messages to use as search queries
 
     # Langfuse observability settings
-    LANGFUSE_ENABLED: bool = Field(default=True, env="LANGFUSE_ENABLED")
+    LANGFUSE_ENABLED: bool = Field(default=False, env="LANGFUSE_ENABLED")
     LANGFUSE_SECRET_KEY: str = Field(default=None, env="LANGFUSE_SECRET_KEY")
     LANGFUSE_PUBLIC_KEY: str = Field(default=None, env="LANGFUSE_PUBLIC_KEY")
     LANGFUSE_BASE_URL: str = Field(
@@ -124,9 +132,9 @@ class Settings(BaseSettings):
     )
 
     # Environment
-    ENVIRONMENT: str = Field(default="development", env="ENVIRONMENT")
-    LOG_LEVEL: str = Field(default="DEBUG", env="LOG_LEVEL")
-    DEBUG: bool = Field(default=True, env="DEBUG")
+    ENVIRONMENT: str = Field(default="production", env="ENVIRONMENT")
+    LOG_LEVEL: str = Field(default="INFO", env="LOG_LEVEL")
+    DEBUG: bool = Field(default=False, env="DEBUG")
 
     class Config:
         env_file = ".env"

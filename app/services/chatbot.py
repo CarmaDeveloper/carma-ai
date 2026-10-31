@@ -9,7 +9,7 @@ from uuid import UUID
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
 
 from app.core.config import settings
-from app.core.exceptions import ModelError
+from app.core.exceptions import ComprehendError, ModelError
 from app.core.langfuse import langfuse_context
 from app.core.logging import setup_logger
 from app.repositories import (
@@ -25,6 +25,7 @@ from app.prompts.chatbot import (
 )
 from app.schemas.chatbot import DocumentReference
 from app.schemas.report import ReferenceItem
+from app.services.comprehend import comprehend_service
 from app.services.llm import LLMService, ModelConfig
 from app.services.rag_retrieval import RAGRetrievalService
 from app.services.s3 import s3_service
@@ -107,7 +108,7 @@ class ChatbotService:
                     if len(title) > SESSION_TITLE_MAX_LENGTH:
                         title = title[: SESSION_TITLE_MAX_LENGTH - 3] + "..."
 
-                    logger.debug(f"Generated session title: {title}")
+                    logger.debug(f"Generated session title: length={len(title)}")
                     return title
 
                 logger.warning("LLM returned empty title, using fallback")
@@ -148,7 +149,7 @@ class ChatbotService:
             
             response, _ = await self.llm_service.generate(messages)
             query = response.strip().strip("\"'")
-            logger.info(f"Generated search query: {query}")
+            logger.info(f"Generated search query: length={len(query)}")
             return query
         except Exception as e:
             logger.warning(f"Failed to generate search query, using message as fallback: {e}")
@@ -267,6 +268,21 @@ class ChatbotService:
         Raises:
             Exception: Any underlying model or database error
         """
+        # Internet search is ignored when web search is not configured
+        use_internet_search = use_internet_search and web_search_service.enabled
+
+        # Redact PII from the new message before the LLM call and before it is
+        # stored, so that the history sent with later messages is redacted too
+        try:
+            [message] = await comprehend_service.redact_texts([message])
+        except ComprehendError as e:
+            logger.error(f"PII redaction failed, chat message not processed: {e}")
+            yield (
+                "chatbot.error",
+                {"error": "PII redaction failed", "message": "Failed to redact personal information"},
+            )
+            return
+
         # Determine if this is a new session
         is_new_session = session_id is None
 
@@ -287,7 +303,7 @@ class ChatbotService:
                     metadata=metadata or {},
                 )
                 logger.info(
-                    f"Created new session in database: {session_id} with title: {title}"
+                    f"Created new session in database: {session_id}"
                 )
             except Exception as e:
                 logger.error(f"Error creating session: {e}", exc_info=True)
@@ -387,7 +403,7 @@ class ChatbotService:
                 # Format results
                 formatted_search_results = web_search_service.format_results(search_results)
                 
-                logger.info(f"Web search completed for '{search_query}', found {len(search_results)} results")
+                logger.info(f"Web search completed: query_length={len(search_query)}, result_count={len(search_results)}")
                 
             except Exception as e:
                 logger.error(f"Web search failed: {e}", exc_info=True)
@@ -653,7 +669,7 @@ class ChatbotService:
                     )
             else:
                 # No sub_references — return document-level reference
-                https_url = s3_service.s3_uri_to_https_url(ref.source_url)
+                https_url = s3_service.s3_uri_to_presigned_url(ref.source_url)
                 if not https_url or https_url in seen_urls:
                     continue
                 seen_urls.add(https_url)
@@ -687,10 +703,17 @@ class ChatbotService:
                     order=order,
                 )
             )
-            return (
-                [msg_model.to_dict() for msg_model in message_models],
-                pagination_metadata,
-            )
+            messages = [msg_model.to_dict() for msg_model in message_models]
+            # Stored reference links expire, so sign them again on read. New
+            # dicts: to_dict returns the model's own list, which must not change.
+            for message in messages:
+                message["references"] = [
+                    {**ref, "url": s3_service.sign_https_url(ref["url"])}
+                    if isinstance(ref, dict) and ref.get("url")
+                    else ref
+                    for ref in message.get("references") or []
+                ]
+            return messages, pagination_metadata
         except Exception as e:
             logger.error(f"Error getting session messages: {e}", exc_info=True)
             return [], {}
