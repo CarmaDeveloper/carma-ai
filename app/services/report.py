@@ -372,9 +372,9 @@ class ReportGenerationService:
                     if title is None:
                         title = filename
 
-                    # Construct S3 URL and convert to HTTPS
+                    # Construct S3 URL and convert to a pre-signed HTTPS URL (the bucket is private)
                     s3_url = s3_service.construct_s3_url(knowledge_id, filename)
-                    https_url = s3_service.s3_uri_to_https_url(s3_url)
+                    https_url = s3_service.s3_uri_to_presigned_url(s3_url)
 
                     if https_url:
                         reference_items.append(

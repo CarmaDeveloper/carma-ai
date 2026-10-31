@@ -669,7 +669,7 @@ class ChatbotService:
                     )
             else:
                 # No sub_references — return document-level reference
-                https_url = s3_service.s3_uri_to_https_url(ref.source_url)
+                https_url = s3_service.s3_uri_to_presigned_url(ref.source_url)
                 if not https_url or https_url in seen_urls:
                     continue
                 seen_urls.add(https_url)
@@ -703,10 +703,17 @@ class ChatbotService:
                     order=order,
                 )
             )
-            return (
-                [msg_model.to_dict() for msg_model in message_models],
-                pagination_metadata,
-            )
+            messages = [msg_model.to_dict() for msg_model in message_models]
+            # Stored reference links expire, so sign them again on read. New
+            # dicts: to_dict returns the model's own list, which must not change.
+            for message in messages:
+                message["references"] = [
+                    {**ref, "url": s3_service.sign_https_url(ref["url"])}
+                    if isinstance(ref, dict) and ref.get("url")
+                    else ref
+                    for ref in message.get("references") or []
+                ]
+            return messages, pagination_metadata
         except Exception as e:
             logger.error(f"Error getting session messages: {e}", exc_info=True)
             return [], {}

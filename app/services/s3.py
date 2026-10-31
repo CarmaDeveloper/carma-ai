@@ -3,10 +3,11 @@
 import tempfile
 from pathlib import Path
 from typing import Optional, Tuple
-from urllib.parse import urlparse, quote
+from urllib.parse import urlparse, unquote
 
 import boto3
-from botocore.exceptions import ClientError, NoCredentialsError
+from botocore.config import Config
+from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
 
 from app.core.config import settings
 from app.core.exceptions import VectorStoreError
@@ -22,6 +23,7 @@ class S3Service:
         """Initialize S3 service."""
         self.region_name = settings.S3_REGION
         self._client = None
+        self._presign_client = None
 
     @property
     def client(self):
@@ -34,6 +36,24 @@ class S3Service:
                     "AWS credentials not found. Please configure AWS credentials."
                 )
         return self._client
+
+    @property
+    def presign_client(self):
+        """Get or create the S3 client for pre-signed URLs.
+
+        It uses the regional virtual-hosted endpoint
+        (https://bucket.s3.<region>.amazonaws.com). The default client signs
+        for the global endpoint, and the backend re-signs only regional URLs.
+        """
+        if self._presign_client is None:
+            self._presign_client = boto3.client(
+                "s3",
+                region_name=self.region_name,
+                config=Config(
+                    signature_version="s3v4", s3={"addressing_style": "virtual"}
+                ),
+            )
+        return self._presign_client
 
     def parse_s3_url(self, s3_url: str) -> Tuple[str, str]:
         """
@@ -81,37 +101,78 @@ class S3Service:
         """
         return f"s3://{settings.S3_BUCKET_NAME}/knowledge/{knowledge_id}/{filename}"
 
-    def s3_uri_to_https_url(self, s3_url: str) -> Optional[str]:
+    def presigned_get_url(self, bucket: str, key: str) -> Optional[str]:
         """
-        Convert S3 URI to HTTPS URL.
+        Return a pre-signed GET URL for an object.
+
+        The bucket is private, so a plain HTTPS URL returns 403. The URL is
+        valid for S3_PRESIGN_TTL_SECONDS. Signing is local: no request is sent.
+
+        Returns:
+            HTTPS URL in format https://bucket.s3.region.amazonaws.com/url-encoded-key?X-Amz-...
+            Returns None if the URL cannot be signed.
+        """
+        try:
+            return self.presign_client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": bucket, "Key": key},
+                ExpiresIn=settings.S3_PRESIGN_TTL_SECONDS,
+            )
+        except (BotoCoreError, ClientError) as e:
+            # The key can hold a file name, so log only the error type.
+            logger.warning(f"Failed to pre-sign S3 URL: {type(e).__name__}")
+            return None
+
+    def s3_uri_to_presigned_url(self, s3_url: str) -> Optional[str]:
+        """
+        Convert S3 URI to a pre-signed HTTPS URL.
 
         Args:
             s3_url: S3 URI in format s3://bucket/key (e.g., s3://carma-bucket/knowledge/uuid/file.pdf)
 
         Returns:
-            HTTPS URL in format https://bucket.s3.region.amazonaws.com/url-encoded-key
-            (e.g., https://carma-bucket.s3.ca-central-1.amazonaws.com/knowledge/uuid/file.pdf)
-            Returns None if the URL is not a valid S3 URI.
+            Pre-signed HTTPS URL in format https://bucket.s3.region.amazonaws.com/url-encoded-key?X-Amz-...
+            (e.g., https://carma-bucket.s3.ca-central-1.amazonaws.com/knowledge/uuid/file.pdf?X-Amz-...)
+            Returns None if the URL is not a valid S3 URI or cannot be signed.
         """
         if not s3_url:
             return None
 
         try:
             bucket, key = self.parse_s3_url(s3_url)
-            # URL-encode the key, preserving slashes for path structure
-            encoded_key = quote(key)
-            return f"https://{bucket}.s3.{self.region_name}.amazonaws.com/{encoded_key}"
         except VectorStoreError as e:
             logger.warning(
                 f"Failed to convert S3 URI to HTTPS URL: {s3_url}, error: {e}"
             )
             return None
-        except Exception as e:
-            logger.error(
-                f"Unexpected error converting S3 URI to HTTPS URL: {s3_url}, error: {e}",
-                exc_info=True,
-            )
-            return None
+        return self.presigned_get_url(bucket, key)
+
+    def sign_https_url(self, url: str) -> str:
+        """
+        Sign again a stored HTTPS URL of the configured bucket.
+
+        Stored links (for example the references in chat history) are plain
+        URLs from before the bucket was private, or pre-signed URLs that
+        expired. Other URLs are returned unchanged.
+        """
+        if not url:
+            return url
+        try:
+            parsed = urlparse(url)
+        except ValueError:
+            return url
+        bucket_host = f"{settings.S3_BUCKET_NAME}.s3.{self.region_name}.amazonaws.com"
+        if parsed.scheme != "https" or (parsed.hostname or "") != bucket_host.lower():
+            return url
+        key = unquote(parsed.path.lstrip("/"))
+        if not key:
+            return url
+        signed = self.presigned_get_url(settings.S3_BUCKET_NAME, key)
+        if signed is None:
+            return url
+        if parsed.fragment:
+            signed += f"#{parsed.fragment}"
+        return signed
 
     def extract_filename_from_s3_path(self, s3_url: str) -> str:
         """

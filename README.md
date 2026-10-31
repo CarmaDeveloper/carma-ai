@@ -109,6 +109,7 @@ The API will be available at `http://localhost:8000`
 | `BEDROCK_MODEL` | Bedrock LLM model | `anthropic.claude-3-sonnet-20240229-v1:0` | Yes |
 | `S3_BUCKET_NAME` | S3 bucket for documents | `carma-rag-bucket` | Yes |
 | `S3_REGION` | S3 region | `ca-central-1` | No |
+| `S3_PRESIGN_TTL_SECONDS` | Lifetime of the pre-signed links to knowledge files (the bucket is private) | `900` | No |
 | `COMPREHEND_REGION` | AWS Comprehend region | `ca-central-1` | No |
 | `COMPREHEND_THRESHOLD` | PII detection threshold | `0.9` | No |
 | `COMPREHEND_TYPES` | PII types redacted before text goes to the LLM | `["NAME", "ADDRESS", "PHONE", "EMAIL", "CA_HEALTH_NUMBER", "CA_SOCIAL_INSURANCE_NUMBER", "USERNAME", "PASSWORD", "CREDIT_DEBIT_NUMBER", "BANK_ACCOUNT_NUMBER", "PIN"]` | No |

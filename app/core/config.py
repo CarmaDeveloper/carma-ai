@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     # AWS S3 settings
     S3_BUCKET_NAME: str = Field(default="carma-bucket", env="S3_BUCKET_NAME")
     S3_REGION: str = Field(default="ca-central-1", env="S3_REGION")
+    # The bucket is private. Reference links to knowledge files are pre-signed GET URLs with this lifetime.
+    S3_PRESIGN_TTL_SECONDS: int = Field(
+        default=900, env="S3_PRESIGN_TTL_SECONDS", ge=60, le=604800
+    )
 
     # AWS Comprehend settings
     COMPREHEND_REGION: str = Field(default="ca-central-1", env="COMPREHEND_REGION")
