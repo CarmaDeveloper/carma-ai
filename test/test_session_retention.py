@@ -83,6 +83,73 @@ def test_app_startup_schedules_session_cleanup(monkeypatch):
     assert sessions[0].statements[0].table.name == "chatbot_messages"
 
 
+class FailingAsyncSession(RecordingAsyncSession):
+    """Fake AsyncSession whose connection times out, like a paused Aurora Serverless database."""
+
+    async def execute(self, statement):
+        raise TimeoutError()
+
+
+class RecordingLogger:
+    def __init__(self) -> None:
+        self.warnings = []
+        self.errors = []
+
+    def warning(self, message):
+        self.warnings.append(message)
+
+    def error(self, message):
+        self.errors.append(message)
+
+    def info(self, message):
+        pass
+
+
+class StopLoop(BaseException):
+    """Ends the endless cleanup loop in a test."""
+
+
+def test_cleanup_retries_soon_after_a_failure_then_waits_the_interval(monkeypatch):
+    import main
+    from app.core.config import settings
+
+    # Two failed runs (the database is waking up), then runs that work.
+    sessions = [FailingAsyncSession(), FailingAsyncSession()]
+    monkeypatch.setattr(
+        main, "async_session_factory", lambda: sessions.pop(0) if sessions else RecordingAsyncSession()
+    )
+    monkeypatch.setattr(settings, "CHATBOT_CLEANUP_INTERVAL_SECONDS", 3600)
+    monkeypatch.setattr(settings, "CHATBOT_CLEANUP_RETRY_SECONDS", 120)
+    logger = RecordingLogger()
+    monkeypatch.setattr(main, "setup_logger", lambda name: logger)
+    delays = []
+
+    async def fake_sleep(seconds):
+        delays.append(seconds)
+        if len(delays) == 4:
+            raise StopLoop()
+
+    monkeypatch.setattr(main.asyncio, "sleep", fake_sleep)
+
+    with pytest.raises(StopLoop):
+        asyncio.run(main.run_session_cleanup())
+
+    assert delays == [120, 240, 3600, 3600]
+    assert len(logger.warnings) == 1 and "TimeoutError" in logger.warnings[0]
+    assert len(logger.errors) == 1 and "failure 2 in a row" in logger.errors[0]
+
+
+def test_cleanup_retry_delay_doubles_and_never_exceeds_the_interval(monkeypatch):
+    import main
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "CHATBOT_CLEANUP_INTERVAL_SECONDS", 300)
+    monkeypatch.setattr(settings, "CHATBOT_CLEANUP_RETRY_SECONDS", 120)
+
+    assert [main.cleanup_retry_delay(n) for n in range(1, 6)] == [120, 240, 300, 300, 300]
+    assert main.cleanup_retry_delay(10_000) == 300
+
+
 @pytest.mark.skipif(
     not os.environ.get("TEST_DATABASE_URL"),
     reason="Set TEST_DATABASE_URL (postgresql+asyncpg://...) to a disposable database to run this test.",

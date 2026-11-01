@@ -17,18 +17,44 @@ from app.db.database import Base, async_session_factory, engine
 from app.repositories.session_repo import SessionRepository
 
 
+def cleanup_retry_delay(failures: int) -> int:
+    """Seconds until the next try after the given number of failed runs in a row.
+
+    The first retry is after CHATBOT_CLEANUP_RETRY_SECONDS. The delay doubles on
+    each failure and is never longer than CHATBOT_CLEANUP_INTERVAL_SECONDS.
+    """
+    interval = settings.CHATBOT_CLEANUP_INTERVAL_SECONDS
+    delay = settings.CHATBOT_CLEANUP_RETRY_SECONDS * 2 ** min(failures - 1, 16)
+    return min(delay, interval)
+
+
 async def run_session_cleanup() -> None:
-    """Delete old chat sessions now and then every CHATBOT_CLEANUP_INTERVAL_SECONDS."""
+    """Delete old chat sessions now and then every CHATBOT_CLEANUP_INTERVAL_SECONDS.
+
+    A failed run is tried again soon (see cleanup_retry_delay). A paused Aurora
+    Serverless database wakes up on the first connection, but that connection
+    can fail before the database is awake. The retry then finds it awake.
+    """
     logger = setup_logger(__name__)
+    failures = 0
     while True:
         try:
             async with async_session_factory() as session:
                 await SessionRepository(session).delete_old_sessions(
                     settings.CHATBOT_SESSION_RETENTION_DAYS
                 )
+            failures = 0
+            delay = settings.CHATBOT_CLEANUP_INTERVAL_SECONDS
         except Exception as e:
-            logger.error(f"Chat session cleanup failed: {type(e).__name__}")
-        await asyncio.sleep(settings.CHATBOT_CLEANUP_INTERVAL_SECONDS)
+            failures += 1
+            delay = cleanup_retry_delay(failures)
+            # One failure is expected when the database is paused, so it is a warning.
+            log = logger.warning if failures == 1 else logger.error
+            log(
+                f"Chat session cleanup failed: {type(e).__name__} "
+                f"(failure {failures} in a row, next try in {delay} s)"
+            )
+        await asyncio.sleep(delay)
 
 
 @asynccontextmanager
