@@ -98,6 +98,9 @@ class Settings(BaseSettings):
     CHATBOT_CLEANUP_INTERVAL_SECONDS: int = Field(
         default=60 * 60, env="CHATBOT_CLEANUP_INTERVAL_SECONDS", ge=30, le=86400
     )  # Run cleanup every 1 hour by default
+    CHATBOT_CLEANUP_RETRY_SECONDS: int = Field(
+        default=120, env="CHATBOT_CLEANUP_RETRY_SECONDS", ge=10, le=3600
+    )  # First retry after a failed cleanup; doubles on each failure, up to the interval
     # Chatbot persistence settings
     CHATBOT_SESSION_RETENTION_DAYS: int = Field(
         default=90, env="CHATBOT_SESSION_RETENTION_DAYS", ge=1, le=365
