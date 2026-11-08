@@ -16,8 +16,15 @@ class WebSearchService:
 
     def __init__(self):
         """Initialize the web search service."""
+        api_key = (settings.TAVILY_API_KEY or "").strip()
+        if not api_key or api_key.lower() == "unknown":
+            logger.info("Web search is disabled: TAVILY_API_KEY is not set.")
+            self.client = None
+            self.enabled = False
+            return
+
         try:
-            self.client = TavilyClient(api_key=settings.TAVILY_API_KEY)
+            self.client = TavilyClient(api_key=api_key)
             self.enabled = True
         except Exception as e:
             logger.warning(
